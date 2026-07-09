@@ -44,7 +44,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-bg">
+    <main role="main" className="min-h-screen flex flex-col items-center justify-center p-4 bg-bg">
       <div className="w-full max-w-md bg-white p-6 md:p-8 rounded-md border border-border shadow-sm">
         <div className="text-center mb-8">
           <h1 className="font-heading text-2xl font-bold text-primary-dark">StokLedger</h1>
@@ -109,6 +109,6 @@ export default function LoginPage() {
           StokLedger &copy; {new Date().getFullYear()} &middot; v1.0
         </div>
       </div>
-    </div>
+    </main>
   );
 }
