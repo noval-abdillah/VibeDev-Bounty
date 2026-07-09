@@ -190,7 +190,7 @@ function RekonsiliasiContent() {
     }
   };
 
-  const handleExportOpnameSelisih = () => {
+  const handleExportOpnameSelisih = async () => {
     const now = new Date();
     const today = now.toISOString().split("T")[0];
 
@@ -225,14 +225,14 @@ function RekonsiliasiContent() {
       ],
     };
 
-    exportToXlsx({
+    await exportToXlsx({
       title: "Rekonsiliasi Opname StokLedger",
       fileName: `StokLedger_Rekonsiliasi_Opname_${today}`,
       sheets: [sheet],
     });
   };
 
-  const handleExportHarianSelisih = () => {
+  const handleExportHarianSelisih = async () => {
     const now = new Date();
     const today = now.toISOString().split("T")[0];
 
@@ -267,7 +267,7 @@ function RekonsiliasiContent() {
       ],
     };
 
-    exportToXlsx({
+    await exportToXlsx({
       title: "Rekonsiliasi Harian StokLedger",
       fileName: `StokLedger_Rekonsiliasi_Harian_${today}`,
       sheets: [sheet],

@@ -303,7 +303,7 @@ export default function StokOpnamePage() {
       ],
     };
 
-    exportToXlsx({
+    await exportToXlsx({
       title: "Stok Opname StokLedger",
       fileName: `StokLedger_Opname_${today}`,
       sheets: [sheet],

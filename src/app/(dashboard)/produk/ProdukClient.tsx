@@ -149,7 +149,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
     alert("Konfigurasi tersimpan.");
   };
 
-  const handleExportProduk = () => {
+  const handleExportProduk = async () => {
     const now = new Date();
     const today = now.toISOString().split("T")[0];
 
@@ -182,7 +182,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       ],
     };
 
-    exportToXlsx({
+    await exportToXlsx({
       title: "Katalog Produk StokLedger",
       fileName: `StokLedger_KatalogProduk_${today}`,
       sheets: [sheet],

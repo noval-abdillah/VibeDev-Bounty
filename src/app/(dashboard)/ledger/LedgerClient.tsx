@@ -79,7 +79,7 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
     setEndDate("");
   };
 
-  const handleExportXlsx = () => {
+  const handleExportXlsx = async () => {
     const now = new Date();
     const today = now.toISOString().split("T")[0];
 
@@ -127,7 +127,7 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
       ],
     };
 
-    exportToXlsx({
+    await exportToXlsx({
       title: "Buku Besar StokLedger",
       fileName: `StokLedger_BukuBesar_${today}`,
       sheets: [ledgerSheet],
