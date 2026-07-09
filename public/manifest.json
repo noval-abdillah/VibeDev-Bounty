@@ -1,0 +1,9 @@
+{
+  "name": "StokLedger",
+  "short_name": "StokLedger",
+  "description": "Sistem Buku Besar & Rekonsiliasi Stok Append-Only",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F6F7F4",
+  "theme_color": "#2F6F5E"
+}

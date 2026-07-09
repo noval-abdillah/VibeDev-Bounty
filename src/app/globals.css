@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  color: #3A1E1C;
+  background-color: #FDF6F5;
+}
+
+/* Touch-optimized scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D48C88;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3A1E1C;
+}
+
+/* Horizontal scroll table indicator (mobile) */
+.table-scroll-container {
+  position: relative;
+}
+
+/* Focus ring accessible */
+:focus-visible {
+  outline: 2px solid #D48C88;
+  outline-offset: 2px;
+}
+
+/* Reduce motion support */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Better tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: rgba(212, 140, 136, 0.2);
+}
+
+/* Smooth momentum scroll on iOS */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
