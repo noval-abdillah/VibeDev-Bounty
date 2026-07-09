@@ -1,5 +1,3 @@
-import XLSX from "xlsx-js-style";
-
 export interface ExportColumn {
   header: string;
   key: string;
@@ -34,137 +32,111 @@ function buildSheetData(sheet: ExportSheet) {
   const dataRows = sheet.rows.map((row) =>
     sheet.columns.map((c) => String(row[c.key] ?? ""))
   );
-  return { headerRow, dataRows };
+  return { headerRow, dataRows: [...dataRows] };
 }
 
-function applyCellStyle(
-  ws: XLSX.WorkSheet,
-  headerRow: string[],
-  dataRows: string[][],
-  columns: ExportColumn[],
-  summaryRowCount: number
-) {
-  const totalRows = dataRows.length;
+const CELL_STYLES = {
+  header: {
+    fill: { fgColor: { rgb: THEME.primary } },
+    font: { bold: true, color: { rgb: THEME.white }, sz: 11, name: "Inter" },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: {
+      top: { style: "thin", color: { rgb: THEME.primaryDark } },
+      bottom: { style: "thin", color: { rgb: THEME.primaryDark } },
+      left: { style: "thin", color: { rgb: THEME.white } },
+      right: { style: "thin", color: { rgb: THEME.white } },
+    },
+  },
+  summary: {
+    fill: { fgColor: { rgb: THEME.bg } },
+    font: { color: { rgb: THEME.primaryDark }, sz: 10, name: "Inter" },
+    alignment: { vertical: "center" },
+    border: { bottom: { style: "thin", color: { rgb: THEME.border } } },
+  },
+  dataEven: {
+    fill: { fgColor: { rgb: THEME.white } },
+    font: { color: { rgb: THEME.primaryDark }, sz: 10, name: "IBM Plex Mono" },
+    alignment: { vertical: "center" },
+    border: { bottom: { style: "thin", color: { rgb: THEME.border } } },
+  },
+  dataOdd: {
+    fill: { fgColor: { rgb: THEME.bg } },
+    font: { color: { rgb: THEME.primaryDark }, sz: 10, name: "IBM Plex Mono" },
+    alignment: { vertical: "center" },
+    border: { bottom: { style: "thin", color: { rgb: THEME.border } } },
+  },
+};
 
-  // Column widths
-  ws["!cols"] = columns.map((col) => ({
-    wch: Math.min(Math.max(col.width || 15, 12), 50),
-  }));
+export async function exportToXlsx(options: ExportOptions) {
+  const XLSX = await import("xlsx-js-style");
 
-  // Apply header style (Row 0)
-  headerRow.forEach((_, colIdx) => {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx });
-    if (!ws[cellRef]) ws[cellRef] = { t: "s", v: "" };
-    ws[cellRef].s = {
-      fill: { fgColor: { rgb: THEME.primary } },
-      font: { bold: true, color: { rgb: THEME.white }, sz: 11, name: "Inter" },
-      alignment: { horizontal: "center", vertical: "center", wrapText: true },
-      border: {
-        top: { style: "thin", color: { rgb: THEME.primaryDark } },
-        bottom: { style: "thin", color: { rgb: THEME.primaryDark } },
-        left: { style: "thin", color: { rgb: THEME.white } },
-        right: { style: "thin", color: { rgb: THEME.white } },
-      },
-    };
-  });
-
-  // Summary rows if any (before data, after header)
-  if (summaryRowCount > 0) {
-    for (let r = 1; r <= summaryRowCount; r++) {
-      for (let c = 0; c < columns.length; c++) {
-        const cellRef = XLSX.utils.encode_cell({ r, c });
-        if (ws[cellRef]) {
-          ws[cellRef].s = {
-            fill: { fgColor: { rgb: THEME.bg } },
-            font: { bold: c === 0, color: { rgb: THEME.primaryDark }, sz: 10, name: "Inter" },
-            alignment: { vertical: "center" },
-            border: { bottom: { style: "thin", color: { rgb: THEME.border } } },
-          };
-        }
-      }
-    }
-  }
-
-  // Apply data row styles
-  const dataStartRow = 1 + summaryRowCount;
-  for (let i = 0; i < totalRows; i++) {
-    const rowIdx = dataStartRow + i;
-    const isEven = i % 2 === 0;
-    for (let c = 0; c < columns.length; c++) {
-      const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c });
-      if (ws[cellRef]) {
-        ws[cellRef].s = {
-          fill: { fgColor: { rgb: isEven ? THEME.white : THEME.bg } },
-          font: {
-            color: { rgb: THEME.primaryDark },
-            sz: 10,
-            name: "IBM Plex Mono",
-          },
-          alignment: { vertical: "center" },
-          border: { bottom: { style: "thin", color: { rgb: THEME.border } } },
-        };
-      }
-    }
-  }
-}
-
-function autoFilterData(
-  ws: XLSX.WorkSheet,
-  columns: ExportColumn[],
-  totalRows: number
-) {
-  const lastRow = totalRows;
-  const lastColLetter = XLSX.utils.encode_col(columns.length - 1);
-  ws["!autofilter"] = { ref: `A1:${lastColLetter}${lastRow + 1}` };
-}
-
-export function exportToXlsx(options: ExportOptions) {
   const wb = XLSX.utils.book_new();
 
-  options.sheets.forEach((sheet) => {
-    let summaryData: { label: string; value: string }[] = [];
-
-    // Build summary rows
-    if (sheet.summaryRows && sheet.summaryRows.length > 0) {
-      summaryData = sheet.summaryRows;
-    }
-
+  for (const sheet of options.sheets) {
+    const summaryData = sheet.summaryRows || [];
     const rows = [...summaryData.map((s) => ({ label: s.label, value: s.value })), ...sheet.rows];
 
     const { headerRow, dataRows } = buildSheetData({ ...sheet, rows });
 
-    // Build full AOA: summary rows use only first 2 columns, data rows use all columns
     const aoa: string[][] = [];
-    // Header
     aoa.push(headerRow);
-    // Summary rows (fill first 2 columns only)
     summaryData.forEach((s) => {
       const row = Array(headerRow.length).fill("");
       row[0] = s.label;
       row[1] = s.value;
       aoa.push(row);
     });
-    // Data rows
-    dataRows.slice(summaryData.length).forEach((row) => {
-      aoa.push(row);
-    });
+    dataRows.slice(summaryData.length).forEach((row) => aoa.push(row));
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    applyCellStyle(ws, headerRow, dataRows.slice(summaryData.length), sheet.columns, summaryData.length);
-    autoFilterData(ws, sheet.columns, dataRows.slice(summaryData.length).length);
+    // Column widths
+    ws["!cols"] = sheet.columns.map((col) => ({
+      wch: Math.min(Math.max(col.width || 15, 12), 50),
+    }));
+
+    // Style header
+    headerRow.forEach((_, colIdx) => {
+      const ref = XLSX.utils.encode_cell({ r: 0, c: colIdx });
+      if (ws[ref]) ws[ref].s = CELL_STYLES.header;
+    });
+
+    // Style summary rows
+    const dataStartRow = 1 + summaryData.length;
+    for (let r = 1; r < dataStartRow; r++) {
+      for (let c = 0; c < sheet.columns.length; c++) {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (ws[ref]) ws[ref].s = CELL_STYLES.summary;
+      }
+    }
+
+    // Style data rows
+    for (let i = 0; i < dataRows.slice(summaryData.length).length; i++) {
+      const rowIdx = dataStartRow + i;
+      const style = i % 2 === 0 ? CELL_STYLES.dataEven : CELL_STYLES.dataOdd;
+      for (let c = 0; c < sheet.columns.length; c++) {
+        const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
+        if (ws[ref]) ws[ref].s = style;
+      }
+    }
+
+    // Auto-filter
+    const totalDataRows = dataRows.slice(summaryData.length).length;
+    const lastColLetter = XLSX.utils.encode_col(sheet.columns.length - 1);
+    ws["!autofilter"] = { ref: `A1:${lastColLetter}${totalDataRows + dataStartRow}` };
 
     XLSX.utils.book_append_sheet(wb, ws, sheet.name);
-  });
+  }
 
-  // Write and download
   const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([wbout], { type: "application/octet-stream" });
+  const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = `${options.fileName}.xlsx`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -206,19 +178,6 @@ export function formatDate(iso: string): string {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-export function formatDateShort(iso: string): string {
-  if (!iso) return "-";
-  try {
-    return new Date(iso).toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
     });
   } catch {
     return iso;

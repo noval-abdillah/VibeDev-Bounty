@@ -51,7 +51,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         <button
           onClick={onMenuClick}
           className="lg:hidden p-2 rounded-sm hover:bg-bg text-ink transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
-          aria-label="Buka menu"
+          aria-label="Buka menu navigasi"
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <line x1="2" y1="5" x2="18" y2="5" />

@@ -10,7 +10,7 @@ interface SectionCardProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export function SectionCard({ className, title, action, children, ...props }: SectionCardProps) {
   return (
-    <div
+    <section
       className={twMerge("p-4 md:p-[18px] bg-white border border-border rounded-md", className)}
       {...props}
     >
@@ -21,7 +21,7 @@ export function SectionCard({ className, title, action, children, ...props }: Se
         </div>
       )}
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -34,7 +34,7 @@ export function Button({ className, variant = "primary", children, ...props }: B
   return (
     <button
       className={twMerge(
-        "px-4 py-2.5 min-h-[44px] text-xs font-semibold rounded-sm transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95",
+        "px-4 py-2.5 min-h-[44px] min-w-[44px] text-xs font-semibold rounded-sm transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 inline-flex items-center justify-center gap-1.5",
         variant === "primary" && "bg-primary hover:bg-primary-dark text-white",
         variant === "ghost" && "border border-border bg-white text-ink-soft hover:bg-bg hover:text-ink",
         variant === "danger" && "bg-danger hover:bg-danger/90 text-white",
@@ -52,9 +52,10 @@ export function Button({ className, variant = "primary", children, ...props }: B
 interface TagProps {
   variant?: "success" | "warning" | "danger" | "primary" | "neutral";
   children: React.ReactNode;
+  className?: string;
 }
 
-export function Tag({ variant = "neutral", children }: TagProps) {
+export function Tag({ variant = "neutral", children, className }: TagProps) {
   return (
     <span
       className={clsx(
@@ -63,7 +64,8 @@ export function Tag({ variant = "neutral", children }: TagProps) {
         variant === "warning" && "bg-warning-bg text-warning",
         variant === "danger" && "bg-danger-bg text-danger",
         variant === "primary" && "bg-primary-light text-ink",
-        variant === "neutral" && "bg-primary-light text-ink-soft"
+        variant === "neutral" && "bg-primary-light text-ink-soft",
+        className
       )}
     >
       {children}
@@ -78,15 +80,20 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ label, error, className, id, ...props }: InputProps) {
+  const inputId = id || `input-${label?.toLowerCase().replace(/\s+/g, "-")}`;
+  const errorId = error ? `${inputId}-error` : undefined;
+
   return (
     <div className="flex flex-col gap-1 w-full">
       {label && (
-        <label htmlFor={id} className="text-xs font-semibold text-ink-soft">
+        <label htmlFor={inputId} className="text-xs font-semibold text-ink-soft">
           {label}
         </label>
       )}
       <input
-        id={id}
+        id={inputId}
+        aria-invalid={error ? "true" : undefined}
+        aria-describedby={errorId}
         className={twMerge(
           "w-full px-3 py-3 min-h-[44px] text-sm bg-white border border-border rounded-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary font-mono transition-colors",
           error && "border-danger focus:border-danger focus:ring-danger/20",
@@ -94,7 +101,11 @@ export function Input({ label, error, className, id, ...props }: InputProps) {
         )}
         {...props}
       />
-      {error && <span className="text-[10px] text-danger font-semibold mt-0.5">{error}</span>}
+      {error && (
+        <span id={errorId} role="alert" className="text-[10px] text-danger font-semibold mt-0.5">
+          {error}
+        </span>
+      )}
     </div>
   );
 }
@@ -107,15 +118,17 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export function Select({ label, error, options, className, id, ...props }: SelectProps) {
+  const selectId = id || `select-${label?.toLowerCase().replace(/\s+/g, "-")}`;
+
   return (
     <div className="flex flex-col gap-1 w-full">
       {label && (
-        <label htmlFor={id} className="text-xs font-semibold text-ink-soft">
+        <label htmlFor={selectId} className="text-xs font-semibold text-ink-soft">
           {label}
         </label>
       )}
       <select
-        id={id}
+        id={selectId}
         className={twMerge(
           "w-full px-3 py-3 min-h-[44px] text-sm bg-white border border-border rounded-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors",
           className
@@ -133,7 +146,7 @@ export function Select({ label, error, options, className, id, ...props }: Selec
   );
 }
 
-// SCROLL TABLE WRAPPER — Adds horizontal scroll with visual indicator for mobile
+// SCROLL TABLE WRAPPER
 interface ScrollTableProps {
   children: React.ReactNode;
   className?: string;
@@ -141,9 +154,44 @@ interface ScrollTableProps {
 
 export function ScrollTable({ children, className }: ScrollTableProps) {
   return (
-    <div className={twMerge("relative overflow-x-auto rounded-sm", className)}>
+    <div className={twMerge("relative overflow-x-auto rounded-sm", className)} role="region" aria-label="Tabel dengan scroll horizontal">
       {children}
-      <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white pointer-events-none sm:hidden" />
+      <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white pointer-events-none sm:hidden" aria-hidden="true" />
+    </div>
+  );
+}
+
+// ALERT / NOTIFICATION BANNER
+interface AlertProps {
+  variant?: "success" | "warning" | "danger";
+  children: React.ReactNode;
+}
+
+export function Alert({ variant = "warning", children }: AlertProps) {
+  return (
+    <div
+      role="alert"
+      className={clsx(
+        "rounded p-3 text-xs font-semibold flex items-center gap-2",
+        variant === "warning" && "bg-warning-bg border border-warning/30 text-warning",
+        variant === "danger" && "bg-danger-bg border border-danger/30 text-danger",
+        variant === "success" && "bg-success-bg border border-success/30 text-success"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// LOADING SPINNER
+export function Loading({ text = "Memuat..." }: { text?: string }) {
+  return (
+    <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
+      <svg className="animate-spin h-5 w-5 text-primary mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+      </svg>
+      <span className="text-ink-soft font-mono text-xs">{text}</span>
     </div>
   );
 }

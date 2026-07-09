@@ -67,24 +67,8 @@ export default function RootLayout({
   return (
     <html lang="id" className={`${inter.variable} ${spaceGrotesk.variable} ${ibmPlexMono.variable}`}>
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                  for (var i = 0; i < registrations.length; i++) {
-                    registrations[i].unregister().then(function(success) {
-                      if (success) {
-                        console.log('Unregistered stale service worker');
-                        window.location.reload();
-                      }
-                    });
-                  }
-                });
-              }
-            `
-          }}
-        />
+        <link rel="preconnect" href="https://ntwxdywbuyupdylgrfwk.supabase.co" />
+        <link rel="dns-prefetch" href="https://ntwxdywbuyupdylgrfwk.supabase.co" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
