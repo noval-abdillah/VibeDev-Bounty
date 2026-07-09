@@ -3,6 +3,7 @@
 import React from "react";
 import { useUser } from "@/context/UserContext";
 import { usePathname } from "next/navigation";
+import { IconFlask } from "@/components/icons/IconFlask";
 
 interface TopbarProps {
   onMenuClick?: () => void;
@@ -68,7 +69,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
       {/* Banner Mode Simulasi */}
       <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-warning-bg border border-warning/20 shrink-0">
-        <span className="text-xs">⚡</span>
+        <IconFlask className="w-3.5 h-3.5 text-warning" />
         <span className="font-mono text-[10px] text-warning font-bold uppercase tracking-wider">
           MODE SIMULASI
         </span>

@@ -5,6 +5,7 @@ import { useUser } from "@/context/UserContext";
 import { SectionCard, Input, Select, Button, Tag } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import type { Order, ReturnItem, Product, Bundle, BundleComponent, OrderStatus } from "@/types";
+import { IconFlask } from "@/components/icons/IconFlask";
 
 export const dynamic = "force-dynamic";
 
@@ -396,7 +397,7 @@ export default function PesananReturPage() {
     <div className="space-y-6">
       {/* Simulation Warn Banner */}
       <div className="bg-warning-bg border border-warning/30 rounded p-3 text-warning font-semibold text-xs flex items-center gap-2">
-        <span>⚠️</span>
+        <IconFlask className="w-4 h-4 text-warning shrink-0" />
         <span>MODE SIMULASI — Fitur pesanan & retur berjalan dalam mode simulasi, belum terintegrasi API marketplace resmi</span>
       </div>
 

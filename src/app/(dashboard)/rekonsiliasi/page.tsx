@@ -8,6 +8,7 @@ import { getStockForProductAndBatch } from "@/lib/ledger";
 import { exportToXlsx, getReasonLabel, formatDate } from "@/lib/export";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Batch, OpnameSession, OpnameItem, LedgerEntry, Order } from "@/types";
+import { IconFlask } from "@/components/icons/IconFlask";
 
 export default function RekonsiliasiPage() {
   return (
@@ -278,7 +279,7 @@ function RekonsiliasiContent() {
     <div className="space-y-6">
       {/* Simulation Banner */}
       <div className="bg-warning-bg border border-warning/30 rounded p-3 text-warning font-semibold text-xs flex items-center gap-2">
-        <span>⚠️</span>
+        <IconFlask className="w-4 h-4 text-warning shrink-0" />
         <span>MODE SIMULASI — Fitur rekonsiliasi berjalan dalam mode simulasi, belum terintegrasi API marketplace resmi</span>
       </div>
 
