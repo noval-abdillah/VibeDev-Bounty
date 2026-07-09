@@ -5,13 +5,19 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { TEST_USERS } from "@/constants/users";
 import type { UserRole } from "@/types";
+import { Input, Button } from "@/components/ui";
 
 export default function LoginPage() {
   const { user, login, loading } = useUser();
   const router = useRouter();
+
   const [error, setError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // Form state
+  const [formEmail, setFormEmail] = useState("");
+  const [formPassword, setFormPassword] = useState("");
 
   useEffect(() => {
     setMounted(true);
@@ -23,15 +29,40 @@ export default function LoginPage() {
     }
   }, [user, router, mounted]);
 
-  const handleTestLogin = async (email: string, role: UserRole) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError("");
+
+    if (!formEmail.trim()) {
+      setError("Email harus diisi.");
+      return;
+    }
+    if (!formPassword || formPassword.length < 6) {
+      setError("Password minimal 6 karakter.");
+      return;
+    }
+
     setSigningIn(true);
-    const success = await login(email, role);
+    const success = await login(formEmail.trim(), formPassword);
     setSigningIn(false);
+
     if (success) {
       router.push("/dashboard");
     } else {
-      setError("Login gagal. Pastikan database Supabase sudah di-seed dengan benar.");
+      setError("Email atau password salah. Pastikan akun sudah didaftarkan oleh Owner.");
+    }
+  };
+
+  const handleDemoLogin = async (email: string) => {
+    setError("");
+    setSigningIn(true);
+    const success = await login(email, "password123");
+    setSigningIn(false);
+
+    if (success) {
+      router.push("/dashboard");
+    } else {
+      setError("Login gagal. Jalankan seed akun tester di /api/seed-users terlebih dahulu.");
     }
   };
 
@@ -52,16 +83,50 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-danger-bg text-danger text-sm rounded border border-danger/30">
+          <div className="mb-4 p-3 bg-danger-bg text-danger text-sm rounded border border-danger/30" role="alert">
             {error}
           </div>
         )}
 
-        <div className="space-y-3">
-          <p className="text-ink-soft text-xs uppercase tracking-wider font-semibold text-center mb-4">
-            Pilih Akun untuk Masuk
-          </p>
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="space-y-4 mb-6">
+          <Input
+            label="Email"
+            type="email"
+            placeholder="nama@stokledger.com"
+            value={formEmail}
+            onChange={(e) => setFormEmail(e.target.value)}
+            required
+            autoComplete="email"
+          />
 
+          <Input
+            label="Password"
+            type="password"
+            placeholder="Masukkan password"
+            value={formPassword}
+            onChange={(e) => setFormPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+
+          <Button type="submit" className="w-full">
+            Masuk ke Dashboard
+          </Button>
+        </form>
+
+        {/* Divider */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border"></div>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-3 text-ink-faint font-semibold tracking-wider">atau masuk cepat</span>
+          </div>
+        </div>
+
+        {/* Demo Quick Login */}
+        <div className="space-y-3">
           {TEST_USERS.map((u) => {
             let roleLabel = "";
             let roleDesc = "";
@@ -89,7 +154,7 @@ export default function LoginPage() {
               <button
                 key={u.role}
                 disabled={signingIn}
-                onClick={() => handleTestLogin(u.email, u.role)}
+                onClick={() => handleDemoLogin(u.email)}
                 className="w-full text-left p-4 min-h-[72px] rounded-md border border-border hover:border-primary hover:bg-primary-light/20 transition-colors duration-150 flex flex-col gap-1 disabled:opacity-50 active:scale-[0.99]"
               >
                 <div className="flex justify-between items-center w-full">

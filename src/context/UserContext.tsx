@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase/client";
 interface UserContextType {
   user: UserProfile | null;
   loading: boolean;
-  login: (email: string, role: UserRole) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -78,13 +78,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const login = async (email: string, role: UserRole): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Sign in using Supabase Auth with standard password.
-      // For testing/mocking, we can use a standard password like "password123" for test accounts.
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password: "password123",
+        password,
       });
 
       if (error || !data.user) {
