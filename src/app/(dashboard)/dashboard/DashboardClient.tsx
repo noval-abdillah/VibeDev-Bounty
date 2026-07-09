@@ -110,7 +110,8 @@ export function DashboardClient({
         .from("opname_items")
         .select("*")
         .eq("session_id", serverLastOpnameSession.id)
-        .then(({ data }) => {
+        .then((result: any) => {
+          const data = result?.data;
           if (data) {
             data.forEach((item: any) => {
               if (item.physical_qty !== item.system_qty) {

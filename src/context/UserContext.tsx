@@ -50,22 +50,32 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
       }
       setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      if (session?.user) {
-        fetchProfile(session.user.id, session.user.email || "");
-      } else {
+    }).catch(() => {
+      if (mounted) {
         setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    try {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!mounted) return;
+        if (session?.user) {
+          fetchProfile(session.user.id, session.user.email || "");
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
+
+      return () => {
+        mounted = false;
+        subscription.unsubscribe();
+      };
+    } catch {
+      if (mounted) setLoading(false);
+      return () => { mounted = false; };
+    }
   }, []);
 
   const login = async (email: string, role: UserRole): Promise<boolean> => {
@@ -89,7 +99,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {}
     setUser(null);
   };
 
