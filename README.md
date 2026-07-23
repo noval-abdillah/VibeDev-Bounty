@@ -226,14 +226,9 @@ erDiagram
 
 ## 📁 7. Database Migrations (Urutan Eksekusi)
 
-Jalankan di **SQL Editor Supabase** berurutan:
+Jalankan query SQL berikut di **SQL Editor Supabase**:
 
-| # | File | Isi |
-|---|------|-----|
-| 1 | `supabase/migrations/20260709000000_init_schema_with_seed.sql` | Schema tabel + RLS policies + Trigger append-only + seed data produk & batch |
-| 2 | `supabase/migrations/20260709000001_indexes_and_views.sql` | Index (product_id, batch_id) + Views (product_stock_summary, batch_stock_summary) |
-| 3 | `supabase/migrations/20260709000002_reconciliation_performance.sql` | View daily_reconciliation_summary untuk rekonsiliasi harian |
-| 4 | `supabase/migrations/20260709000000_fefo_rpc.sql` | RPC Functions: `process_order_fefo`, `process_cancel_order`, `process_return` |
+*   **`supabase/migrations/20260709000006_full_sql_editor.sql`** — Satu file terpadu yang berisi inisialisasi skema tabel, indeks optimasi performa, trigger append-only, views, RPC functions, serta data dummy awal produk & promo.
 
 ---
 
@@ -255,10 +250,10 @@ npm install
 
 # 3. Set environment variables
 cp .env.example .env
-# Edit .env dengan credentials Supabase Anda
+# Edit .env dengan credentials Supabase Anda (URL, Anon Key, Service Role Key)
 
 # 4. Inisialisasi database
-# Jalankan 4 file migration di SQL Editor Supabase (lihat bagian 7)
+# Jalankan file migration full_sql_editor.sql di SQL Editor Supabase (lihat bagian 7)
 
 # 5. Seed akun tester
 curl http://localhost:3055/api/seed-users
@@ -272,9 +267,7 @@ npm run dev
 
 | Role | Email | Password |
 |------|-------|----------|
-| **Gudang** (Operator) | gudang@stokledger.com | password123 |
 | **Admin** (Config) | admin@stokledger.com | password123 |
-| **Owner** (Read-only) | owner@stokledger.com | password123 |
 
 ---
 
@@ -294,25 +287,25 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 project/
 ├── src/
 │   ├── app/
-│   │   ├── (dashboard)/         # Halaman dashboard (rekonsiliasi, produk, masuk, dll)
+│   │   ├── (dashboard)/         # Rute Halaman Dashboard (rekonsiliasi, produk, retur, promo, dll)
 │   │   ├── api/
-│   │   │   ├── webhook/orders/  # Route handler simulasi → siap ganti API asli
+│   │   │   ├── webhook/orders/  # Route handler simulasi & promo otomatis
 │   │   │   ├── users/           # Manajemen anggota (Owner only)
 │   │   │   └── seed-users/      # Seeder akun tester
-│   │   └── login/               # Login multi-role
+│   │   └── login/               # Halaman login email+password & demo
 │   ├── components/
-│   │   ├── layout/              # Sidebar, Topbar, MainLayout (mobile responsive)
-│   │   ├── ui/                  # Atom UI (Button, Input, Tag, SectionCard)
-│   │   └── icons/               # Custom SVG icon set (11 icons)
+│   │   ├── layout/              # Sidebar (Drawer mobile), Topbar (jejak banner & hamburger)
+│   │   ├── ui/                  # Atom UI (Button, Input, Tag, SectionCard, ScrollTable, Alert, Loading)
+│   │   └── icons/               # Custom SVG icon set (12 icons including IconFlask)
 │   ├── lib/
 │   │   ├── supabase/            # client.ts, server.ts (Supabase helpers)
 │   │   ├── fefo.ts              # Algoritma FEFO (client-side, untuk form manual)
-│   │   ├── ledger.ts            # Helper read/write ledger (getStockForProduct, writeLedgerEntry)
-│   │   └── export.ts            # XLSX export utility dengan styling tema
+│   │   ├── ledger.ts            # Helper read/write ledger
+│   │   └── export.ts            # XLSX export utility dengan styling tema Rose Quartz
 │   ├── types/                   # TypeScript types (Product, Batch, LedgerEntry, dll)
 │   └── context/                 # UserContext (auth session + profile)
 └── supabase/
-    └── migrations/              # SQL migrations (4 file, urut sesuai nomor)
+    └── migrations/              # SQL migrations (6 file, urut sesuai nomor)
 ```
 
 ---
