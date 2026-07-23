@@ -312,6 +312,14 @@ export default function StokOpnamePage() {
 
   return (
     <div className="space-y-6">
+      {/* Informative Alert Banner */}
+      <div role="alert" className="bg-warning-bg border border-warning/30 rounded p-3 text-warning font-semibold text-xs flex items-center gap-2">
+        <span>📋</span>
+        <span>
+          <strong>Instruksi Stok Opname:</strong> Masukkan hasil hitung fisik gudang per batch. Sistem akan membandingkannya dengan catatan Buku Besar (stok sistem). Setiap selisih yang ditemukan akan ditulis sebagai baris koreksi berjejak baru di ledger (append-only), tanpa menimpa atau memodifikasi catatan sejarah transaksi lama.
+        </span>
+      </div>
+
       {activeSession ? (
         <SectionCard
           title={`Sesi Opname Aktif (DRAFT)`}
@@ -321,7 +329,7 @@ export default function StokOpnamePage() {
                 Simpan Draft
               </Button>
               <Button variant="success" disabled={isReadOnly || loading} onClick={handleCompleteOpname}>
-                Selesaikan &amp; Koreksi
+                Simpan &amp; Buat Koreksi
               </Button>
             </div>
           }

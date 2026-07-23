@@ -30,13 +30,12 @@ export function DashboardClient({
 }: DashboardClientProps) {
   const router = useRouter();
   const [totalProducts] = useState(serverProducts.length);
-  const totalStock = serverLedger.reduce((sum, e) => sum + e.qty, 0);
   const [expiryWarningsCount, setExpiryWarningsCount] = useState(0);
-  const [tiktokClaimsCount, setTiktokClaimsCount] = useState(0);
-  const [recentEntries] = useState(serverLedger.slice(0, 5));
+  const [returnsMenungguInspeksiCount] = useState(serverReturns.filter((r: any) => r.condition === null).length);
+  const [recentEntries] = useState(serverLedger.slice(0, 8));
   const [products] = useState<Product[]>(serverProducts);
   const [batches] = useState<Batch[]>(serverBatches);
-  const [anomalies, setAnomalies] = useState<any[]>([]);
+  const [worklist, setWorklist] = useState<any[]>([]);
 
   useEffect(() => {
     // Expiry warnings (expiry date within 30 days)
@@ -45,29 +44,32 @@ export function DashboardClient({
     thirtyDaysFromNow.setDate(today.getDate() + 30);
 
     let warningCount = 0;
+    const activeExpiryList: any[] = [];
     serverBatches.forEach((b: any) => {
       const expDate = new Date(b.expiry_date);
-      if (expDate <= thirtyDaysFromNow && expDate >= today) {
-        const batchStock = serverLedger
-          .filter((e: any) => e.product_id === b.product_id && e.batch_id === b.id)
-          .reduce((sum: number, e: any) => sum + e.qty, 0);
-        if (batchStock > 0) warningCount++;
+      const diffTime = expDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const batchStock = serverLedger
+        .filter((e: any) => e.product_id === b.product_id && e.batch_id === b.id)
+        .reduce((sum: number, e: any) => sum + e.qty, 0);
+
+      if (batchStock > 0) {
+        if (diffDays <= 30) {
+          warningCount++;
+          activeExpiryList.push({
+            batchCode: b.batch_code,
+            productName: serverProducts.find((p: any) => p.id === b.product_id)?.name || "Produk",
+            stock: batchStock,
+            remainingDays: diffDays,
+          });
+        }
       }
     });
     setExpiryWarningsCount(warningCount);
 
-    // TikTok claims
-    const pendingTiktokClaims = serverReturns.filter((r: any) => {
-      if (r.channel !== "tiktok" || r.status !== "PENDING" || !r.received_at) return false;
-      const receivedDate = new Date(r.received_at);
-      const elapsedDays = (Date.now() - receivedDate.getTime()) / (1000 * 60 * 60 * 24);
-      return elapsedDays <= 40;
-    });
-    setTiktokClaimsCount(pendingTiktokClaims.length);
-
     // Calculate anomalies
-    const list: any[] = [];
-
+    const discrepanciesList: any[] = [];
     serverOrders.forEach((order: any) => {
       if (order.status === "PENDING" || order.status === "CANCELLED") return;
 
@@ -93,46 +95,83 @@ export function DashboardClient({
         if (expectedDeduction !== actualDeduction) {
           const prod = serverProducts.find((p: any) => p.id === comp.product_id);
           if (prod) {
-            list.push({
+            discrepanciesList.push({
               productId: prod.id,
               productName: prod.name,
               diff: expectedDeduction - actualDeduction,
-              type: "harian",
-              desc: `Selisih harian di order ${order.order_code}`,
+              orderCode: order.order_code,
             });
           }
         }
       });
     });
 
-    if (serverLastOpnameSession) {
-      supabase
-        .from("opname_items")
-        .select("*")
-        .eq("session_id", serverLastOpnameSession.id)
-        .then((result: any) => {
-          const data = result?.data;
-          if (data) {
-            data.forEach((item: any) => {
-              if (item.physical_qty !== item.system_qty) {
-                const prod = serverProducts.find((p: any) => p.id === item.product_id);
-                if (prod) {
-                  list.push({
-                    productId: prod.id,
-                    productName: prod.name,
-                    diff: item.physical_qty - item.system_qty,
-                    type: "opname",
-                    desc: `Ditemukan saat opname ${new Date(serverLastOpnameSession.completed_at || "").toLocaleDateString("id-ID")}`,
-                  });
-                }
-              }
-            });
-          }
-          setAnomalies([...list]);
-        });
-    } else {
-      setAnomalies(list);
-    }
+    // Build the Worklist
+    const items: any[] = [];
+
+    // 1. TikTok and Shopee Returns
+    serverReturns.forEach((r: any) => {
+      if (r.condition === null) {
+        if (r.channel === "tiktok" && r.received_at) {
+          const recDate = new Date(r.received_at);
+          const elapsedDays = Math.floor((today.getTime() - recDate.getTime()) / (1000 * 60 * 60 * 24));
+          const remainingDays = 40 - elapsedDays;
+          
+          let severity: "danger" | "warning" | "success" = "success";
+          if (remainingDays <= 5) severity = "danger";
+          else if (remainingDays <= 15) severity = "warning";
+
+          items.push({
+            id: `ret-${r.id}`,
+            title: `Klaim TikTok ${r.order_code} — ${remainingDays >= 0 ? `${remainingDays} hari lagi` : "lewat batas"}`,
+            subtitle: `Retur SKU ${r.sku} (${r.qty} unit) menunggu inspeksi kondisi`,
+            severity,
+            link: "/retur",
+          });
+        } else {
+          items.push({
+            id: `ret-${r.id}`,
+            title: `Inspeksi Retur ${r.order_code}`,
+            subtitle: `Retur ${r.channel === "shopee" ? "Shopee" : "TikTok"} SKU ${r.sku} (${r.qty} unit) belum diperiksa`,
+            severity: "warning",
+            link: "/retur",
+          });
+        }
+      }
+    });
+
+    // 2. Daily Discrepancies
+    discrepanciesList.forEach((d) => {
+      items.push({
+        id: `disc-${d.orderCode}-${d.productId}`,
+        title: `Selisih Harian Order ${d.orderCode}`,
+        subtitle: `${d.productName} — selisih ${Math.abs(d.diff)} unit antara ledger dan order`,
+        severity: "danger",
+        link: `/rekonsiliasi?product_id=${d.productId}`,
+      });
+    });
+
+    // 3. Expiry Alerts
+    activeExpiryList.forEach((e) => {
+      let severity: "danger" | "warning" | "success" = "warning";
+      if (e.remainingDays <= 7) severity = "danger";
+
+      items.push({
+        id: `exp-${e.batchCode}`,
+        title: `Batch ${e.batchCode} Expired — ${e.remainingDays >= 0 ? `${e.remainingDays} hari lagi` : "sudah kedaluwarsa"}`,
+        subtitle: `${e.productName} — sisa stok ${e.stock} unit`,
+        severity,
+        link: "/notifikasi",
+      });
+    });
+
+    // Sort worklist: danger (kritis) first, then warning (perlu perhatian), then success
+    items.sort((a, b) => {
+      const score = { danger: 3, warning: 2, success: 1 };
+      return score[b.severity as keyof typeof score] - score[a.severity as keyof typeof score];
+    });
+
+    setWorklist(items);
   }, []);
 
   const getReasonLabel = (reason: string) => {
@@ -169,152 +208,128 @@ export function DashboardClient({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SectionCard className="flex flex-col justify-between">
           <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Total Produk</span>
+            <span className="text-xs text-ink-soft font-semibold uppercase">Total SKU Aktif</span>
             <div className="text-2xl font-bold font-mono text-ink mt-1">{totalProducts}</div>
           </div>
-          <div className="text-[11px] text-ink-faint mt-4">Produk aktif dalam katalog</div>
+          <div className="text-[11px] text-ink-faint mt-4">Katalog produk aktif</div>
         </SectionCard>
 
         <SectionCard className="flex flex-col justify-between">
           <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Total Stok Fisik</span>
-            <div className="text-2xl font-bold font-mono text-primary mt-1">
-              {totalStock.toLocaleString("id-ID")}
-            </div>
-          </div>
-          <div className="text-[11px] text-ink-faint mt-4">Total kuantitas barang di gudang</div>
-        </SectionCard>
-
-        <SectionCard className="flex flex-col justify-between">
-          <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Near Expiry Batch</span>
+            <span className="text-xs text-ink-soft font-semibold uppercase">Batch Mendekati Exp.</span>
             <div className="text-2xl font-bold font-mono text-warning mt-1">{expiryWarningsCount}</div>
           </div>
-          <div className="text-[11px] text-ink-faint mt-4">Batch aktif kedaluwarsa &lt; 30 hari</div>
+          <div className="text-[11px] text-ink-faint mt-4">Expired &le; 30 hari &amp; stok &gt; 0</div>
         </SectionCard>
 
         <SectionCard className="flex flex-col justify-between">
           <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Klaim Retur TikTok</span>
-            <div className="text-2xl font-bold font-mono text-danger mt-1">{tiktokClaimsCount}</div>
+            <span className="text-xs text-ink-soft font-semibold uppercase">Retur Menunggu Inspeksi</span>
+            <div className="text-2xl font-bold font-mono text-primary mt-1">
+              {returnsMenungguInspeksiCount}
+            </div>
           </div>
-          <div className="text-[11px] text-ink-faint mt-4">Pending klaim batas &lt; 40 hari</div>
+          <div className="text-[11px] text-ink-faint mt-4">Retur yang belum diperiksa</div>
+        </SectionCard>
+
+        <SectionCard className="flex flex-col justify-between">
+          <div>
+            <span className="text-xs text-ink-soft font-semibold uppercase">Anomali Terbuka</span>
+            <div className="text-2xl font-bold font-mono text-danger mt-1">{worklist.length}</div>
+          </div>
+          <div className="text-[11px] text-ink-faint mt-4">Total anomali &amp; task kritis</div>
         </SectionCard>
       </div>
 
-      {/* Anomalies Widget */}
-      <SectionCard title="Anomali & Selisih Stok — Perlu Ditelusuri">
-        {anomalies.length === 0 ? (
-          <div className="p-4 text-center text-xs text-ink-faint font-mono">
-            Tidak ada selisih stok atau anomali yang terdeteksi.
-          </div>
-        ) : (
-          <div className="divide-y divide-border text-xs">
-            {anomalies.map((a, i) => (
-              <div key={i} className="py-2.5 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <span className="text-danger font-bold font-mono">⚠️</span>
-                  <span className="font-semibold text-ink">{a.productName}</span>
-                  <span className="font-mono text-danger font-bold px-1.5 py-0.5 rounded bg-danger-bg text-[10px]">
-                    {a.diff > 0 ? `+${a.diff}` : a.diff} unit
-                  </span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-ink-faint font-mono text-[10px]">{a.desc}</span>
-                  <Button
-                    variant="ghost"
-                    className="px-2 py-0.5 text-[10px]"
-                    onClick={() => router.push(`/rekonsiliasi?product_id=${a.productId}`)}
-                  >
-                    Telusuri &rarr;
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
       {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Worklist Anomali Harian */}
         <div className="lg:col-span-2 space-y-4">
-          <SectionCard title="Aktivitas Buku Besar Terbaru" action={<Link href="/ledger" className="text-xs font-semibold text-primary hover:underline">Lihat Semua &rarr;</Link>}>
-            <div className="border border-border rounded-md overflow-hidden bg-[#FAFAF9]">
-              <div className="px-4 py-3 bg-white border-b border-border flex justify-between text-xs font-bold text-ink-soft">
-                <span>DETAIL TRANSAKSI</span>
-                <span className="text-right">JUMLAH (QTY)</span>
-              </div>
-              <div className="divide-y divide-dashed divide-border-strong">
-                {recentEntries.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-ink-faint font-mono">
-                    Belum ada transaksi stok tercatat.
-                  </div>
-                ) : (
-                  recentEntries.map((e) => {
-                    const prod = products.find((p) => p.id === e.product_id);
-                    const batch = batches.find((b) => b.id === e.batch_id);
-                    const isPositive = e.qty > 0;
-
-                    return (
-                      <div key={e.id} className="p-4 hover:bg-white transition-colors duration-100 flex justify-between items-center gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-semibold ${isPositive ? "text-success" : "text-danger"}`}>
-                              {isPositive ? "▲" : "▼"}
+          <SectionCard title="Tugas Hari Ini (Worklist Anomali Harian)">
+            <div className="divide-y divide-border text-xs">
+              {worklist.length === 0 ? (
+                <div className="p-8 text-center text-ink-faint font-mono">
+                  Semua aman! Tidak ada anomali atau tugas mendesak hari ini.
+                </div>
+              ) : (
+                worklist.map((item) => (
+                  <div key={item.id} className="py-3 flex justify-between items-center hover:bg-bg/10 transition-colors px-1">
+                    <div className="flex items-start gap-3 min-w-0">
+                      {/* Status Dot */}
+                      <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
+                        item.severity === "danger" ? "bg-danger" : item.severity === "warning" ? "bg-warning" : "bg-success"
+                      }`} />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-ink flex items-center gap-2 flex-wrap">
+                          <span>{item.title}</span>
+                          {item.severity === "danger" && (
+                            <span className="px-1.5 py-0.5 rounded bg-danger-bg text-danger text-[9px] font-bold uppercase tracking-wider font-mono">
+                              kritis
                             </span>
-                            <span className="text-xs font-bold text-ink font-heading">{prod?.name || "Produk Tidak Dikenal"}</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-soft">
-                            <span className="font-mono bg-primary-light px-1.5 py-0.5 rounded text-primary-dark">
-                              Batch: {batch?.batch_code || e.batch_id}
-                            </span>
-                            <span>&bull;</span>
-                            <span>{getReasonLabel(e.reason)}</span>
-                            <span>&bull;</span>
-                            {getChannelTag(e.channel)}
-                            {e.reference_id && (
-                              <>
-                                <span>&bull;</span>
-                                <span className="font-mono text-ink-faint">{e.reference_id}</span>
-                              </>
-                            )}
-                          </div>
+                          )}
                         </div>
-                        <div className="text-right flex flex-col items-end">
-                          <span className={`text-sm font-bold font-mono ${isPositive ? "text-success" : "text-danger"}`}>
-                            {isPositive ? `+${e.qty}` : e.qty}
-                          </span>
-                          <span className="text-[10px] text-ink-faint font-mono mt-0.5">
-                            {new Date(e.created_at).toLocaleDateString("id-ID", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
+                        <p className="text-[11px] text-ink-soft mt-0.5 font-mono">{item.subtitle}</p>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      className="px-3 py-1 text-[10px] shrink-0"
+                      onClick={() => router.push(item.link)}
+                    >
+                      Telusuri &rarr;
+                    </Button>
+                  </div>
+                ))
+              )}
             </div>
           </SectionCard>
         </div>
 
+        {/* Right Column: Pergerakan Terbaru & Navigasi Cepat */}
         <div className="space-y-4">
+          <SectionCard title="Pergerakan Terbaru">
+            <div className="divide-y divide-dashed divide-border-strong text-xs">
+              {recentEntries.length === 0 ? (
+                <div className="py-4 text-center text-ink-faint font-mono">
+                  Belum ada catatan pergerakan.
+                </div>
+              ) : (
+                recentEntries.map((e) => {
+                  const prod = products.find((p) => p.id === e.product_id);
+                  const batch = batches.find((b) => b.id === e.batch_id);
+                  const isPositive = e.qty > 0;
+
+                  return (
+                    <div key={e.id} className="py-3 flex justify-between items-start gap-2">
+                      <div className="min-w-0">
+                        <span className="font-semibold text-ink block truncate">{prod?.name || "Produk dihapus"}</span>
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-ink-soft mt-1">
+                          <Tag variant="neutral" className="px-1 py-0">{getReasonLabel(e.reason)}</Tag>
+                          <span className="font-mono text-ink-faint">Batch: {batch?.batch_code || e.batch_id}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className={`font-mono font-bold ${isPositive ? "text-success" : "text-danger"}`}>
+                          {isPositive ? `+${e.qty}` : e.qty}
+                        </span>
+                        <span className="text-[9px] text-ink-faint block font-mono">
+                          {new Date(e.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </SectionCard>
+
           <SectionCard title="Navigasi Cepat">
             <div className="space-y-2">
-              <Link
-                href="/masuk"
-                className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
-              >
-                <span>Penerimaan Barang Masuk (Maklon)</span>
-                <span>&rarr;</span>
-              </Link>
               <Link
                 href="/manual"
                 className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
               >
-                <span>Pencatatan Keluar Manual</span>
+                <span>Pencatatan Masuk &amp; Keluar Manual</span>
                 <span>&rarr;</span>
               </Link>
               <Link
@@ -325,26 +340,19 @@ export function DashboardClient({
                 <span>&rarr;</span>
               </Link>
               <Link
+                href="/retur"
+                className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
+              >
+                <span>Inspeksi Retur Barang</span>
+                <span>&rarr;</span>
+              </Link>
+              <Link
                 href="/opname"
                 className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
               >
                 <span>Stok Opname Gudang</span>
                 <span>&rarr;</span>
               </Link>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Prinsip Buku Besar">
-            <div className="text-xs text-ink-soft space-y-3 leading-relaxed">
-              <p>
-                <strong>1. Append-Only:</strong> Riwayat transaksi tidak dapat diubah atau dihapus. Jika ada kesalahan, masukkan baris penyesuaian baru.
-              </p>
-              <p>
-                <strong>2. FEFO Otomatis:</strong> Kuantitas barang keluar otomatis dipotong dari batch terdekat kedaluwarsa.
-              </p>
-              <p>
-                <strong>3. Rekonsiliasi Selisih:</strong> Selisih antara saldo fisik dan sistem dikoreksi lewat opname yang menghasilkan data ledger baru.
-              </p>
             </div>
           </SectionCard>
         </div>

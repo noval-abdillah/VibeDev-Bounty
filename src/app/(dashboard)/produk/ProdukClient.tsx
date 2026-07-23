@@ -14,15 +14,17 @@ interface ProdukClientProps {
   serverProducts: any[];
   serverBundles: any[];
   serverBundleComponents: any[];
+  serverPendingOrders: any[];
 }
 
-export function ProdukClient({ serverProducts, serverBundles, serverBundleComponents }: ProdukClientProps) {
+export function ProdukClient({ serverProducts, serverBundles, serverBundleComponents, serverPendingOrders }: ProdukClientProps) {
   const { user } = useUser();
   const isAdmin = user?.role === "admin";
 
   const [activeTab, setActiveTab] = useState<"produk" | "bundle" | "config">("produk");
   const [products, setProducts] = useState<any[]>(serverProducts);
   const [productStocks, setProductStocks] = useState<Record<string, number>>({});
+  const [productReservations, setProductReservations] = useState<Record<string, number>>({});
   const [bundles, setBundles] = useState<Bundle[]>(serverBundles);
   const [bundleComponents, setBundleComponents] = useState<BundleComponent[]>(serverBundleComponents as BundleComponent[]);
   
@@ -47,6 +49,31 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
   const [expiryThreshold, setExpiryThreshold] = useState(30);
 
   useEffect(() => {
+    // Compute reservations
+    const reservations: Record<string, number> = {};
+    
+    serverProducts.forEach((p: any) => {
+      let resQty = 0;
+      serverPendingOrders.forEach((o: any) => {
+        // If single product SKU matches
+        if (o.sku.toUpperCase() === p.sku.toUpperCase()) {
+          resQty += o.qty;
+        } else {
+          // If order is a bundle, check if product is a component of it
+          const bundle = serverBundles.find((b: any) => b.sku.toUpperCase() === o.sku.toUpperCase());
+          if (bundle) {
+            const comps = (serverBundleComponents as BundleComponent[]).filter((bc) => bc.bundle_id === bundle.id);
+            const matchedComp = comps.find((c) => c.product_id === p.product_id);
+            if (matchedComp) {
+              resQty += matchedComp.qty * o.qty;
+            }
+          }
+        }
+      });
+      reservations[p.product_id] = resQty;
+    });
+    setProductReservations(reservations);
+
     // Server already sent product_stock_summary with total_stock field
     const stocks: Record<string, number> = {};
     serverProducts.forEach((p: any) => {
@@ -228,6 +255,8 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
                     <th className="py-3 px-4">Nama Produk</th>
                     <th className="py-3 px-4">SKU</th>
                     <th className="py-3 px-4 text-right">Stok Fisik</th>
+                    <th className="py-3 px-4 text-right">Reservasi</th>
+                    <th className="py-3 px-4 text-right">Aman Dijual</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-center">Aksi</th>
                   </tr>
@@ -235,15 +264,42 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
                 <tbody className="divide-y divide-border text-sm">
                   {filteredProducts.map((p) => {
                     const stock = productStocks[p.id] || 0;
+                    const reservation = productReservations[p.id] || 0;
+                    const safeToSell = stock - reservation;
+
                     return (
                       <tr key={p.id} className={`hover:bg-bg/10 transition-colors ${!p.is_active ? "opacity-55" : ""}`}>
-                        <td className="py-3 px-4"><Link href={`/produk/${p.id}`} className="font-heading font-semibold text-primary hover:underline">{p.name}</Link></td>
+                        <td className="py-3 px-4">
+                          <Link href={`/produk/${p.id}`} className="font-heading font-semibold text-primary hover:underline">
+                            {p.name}
+                          </Link>
+                        </td>
                         <td className="py-3 px-4 font-mono">{p.sku}</td>
                         <td className="py-3 px-4 text-right font-mono font-bold">{stock.toLocaleString("id-ID")}</td>
-                        <td className="py-3 px-4">{p.is_active ? <Tag variant="success">AKTIF</Tag> : <Tag variant="neutral">NONAKTIF</Tag>}</td>
-                        <td className="py-3 px-4 text-center space-x-2">
+                        <td className="py-3 px-4 text-right font-mono text-ink-soft">{reservation.toLocaleString("id-ID")}</td>
+                        <td className="py-3 px-4 text-right font-mono">
+                          <Tag variant={safeToSell > 0 ? "success" : "neutral"} className="font-bold text-[12px]">
+                            {safeToSell.toLocaleString("id-ID")}
+                          </Tag>
+                        </td>
+                        <td className="py-3 px-4">
+                          {p.is_active ? (
+                            <Tag variant="success">AKTIF</Tag>
+                          ) : (
+                            <Tag variant="neutral">NONAKTIF</Tag>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center space-x-2 whitespace-nowrap">
                           <Link href={`/produk/${p.id}`}><Button variant="ghost" className="px-2.5 py-1">Detail &amp; Batch</Button></Link>
-                          {isAdmin && <Button variant={p.is_active ? "danger" : "success"} className="px-2.5 py-1" onClick={() => handleToggleProductActive(p.id, p.is_active)}>{p.is_active ? "Nonaktifkan" : "Aktifkan"}</Button>}
+                          {isAdmin && (
+                            <Button
+                              variant={p.is_active ? "danger" : "success"}
+                              className="px-2.5 py-1"
+                              onClick={() => handleToggleProductActive(p.id, p.is_active)}
+                            >
+                              {p.is_active ? "Nonaktifkan" : "Aktifkan"}
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );

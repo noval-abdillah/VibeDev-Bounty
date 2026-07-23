@@ -12,6 +12,7 @@ import { IconCheckClipboard } from "../icons/IconCheckClipboard";
 import { IconScale } from "../icons/IconScale";
 import { IconBell } from "../icons/IconBell";
 import { IconVial } from "../icons/IconVial";
+import { IconBoxes } from "../icons/IconBoxes";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -25,11 +26,12 @@ export function Sidebar({ onClose }: SidebarProps) {
     { href: "/dashboard", label: "Dashboard", icon: IconDashboard },
     { href: "/produk", label: "Produk & Batch", icon: IconVial },
     { href: "/ledger", label: "Buku Besar", icon: IconLedger },
-    { href: "/masuk", label: "Barang Masuk (Maklon)", icon: IconTruck, role: ["gudang", "admin"] },
-    { href: "/manual", label: "Keluar Manual", icon: IconEdit, role: ["gudang", "admin"] },
-    { href: "/pesanan", label: "Pesanan & Retur", icon: IconBag, role: ["gudang", "admin"] },
+    { href: "/manual", label: "Input Manual", icon: IconEdit, role: ["gudang", "admin"] },
+    { href: "/pesanan", label: "Pesanan Marketplace", icon: IconBag, role: ["gudang", "admin"] },
+    { href: "/retur", label: "Inspeksi Retur", icon: IconTruck, role: ["gudang", "admin"] },
     { href: "/opname", label: "Stok Opname", icon: IconCheckClipboard, role: ["gudang", "admin"] },
     { href: "/rekonsiliasi", label: "Rekonsiliasi", icon: IconScale },
+    { href: "/promo", label: "Aturan Promo", icon: IconBoxes, role: ["admin"] },
     { href: "/anggota", label: "Kelola Anggota", icon: IconEdit, role: ["owner"] },
     { href: "/notifikasi", label: "Notifikasi", icon: IconBell },
   ];

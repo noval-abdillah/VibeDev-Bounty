@@ -2,26 +2,37 @@
 
 import React, { useEffect, useState } from "react";
 import { useUser } from "@/context/UserContext";
-import { SectionCard, Input, Select, Button } from "@/components/ui";
+import { SectionCard, Input, Select, Button, Alert } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import { writeLedgerEntry, getStockForProduct } from "@/lib/ledger";
 import { allocateBatchFefo } from "@/lib/fefo";
 import type { Product, LedgerReason } from "@/types";
 
-export default function KeluarManualPage() {
+export default function ManualPage() {
   const { user } = useUser();
   const isReadOnly = user?.role === "owner";
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState("");
-  const [selectedReason, setSelectedReason] = useState<LedgerReason>("bonus");
-  const [quantity, setQuantity] = useState("");
-  const [referenceId, setReferenceId] = useState("");
-  const [availableStock, setAvailableStock] = useState<number | null>(null);
+  
+  // 1. Barang Masuk (Maklon) State
+  const [masukProductId, setMasukProductId] = useState("");
+  const [masukBatchCode, setMasukBatchCode] = useState("");
+  const [masukExpiryDate, setMasukExpiryDate] = useState("");
+  const [masukQty, setMasukQty] = useState("");
+  const [masukRef, setMasukRef] = useState("");
+  const [masukError, setMasukError] = useState("");
+  const [masukSuccess, setMasukSuccess] = useState("");
+  const [masukLoading, setMasukLoading] = useState(false);
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [loading, setLoading] = useState(false);
+  // 2. Barang Keluar Manual State
+  const [keluarProductId, setKeluarProductId] = useState("");
+  const [keluarReason, setKeluarReason] = useState<LedgerReason>("bonus");
+  const [keluarQty, setKeluarQty] = useState("");
+  const [keluarRef, setKeluarRef] = useState("");
+  const [keluarStock, setKeluarStock] = useState<number | null>(null);
+  const [keluarError, setKeluarError] = useState("");
+  const [keluarSuccess, setKeluarSuccess] = useState("");
+  const [keluarLoading, setKeluarLoading] = useState(false);
 
   useEffect(() => {
     supabase.from("products").select("*").eq("is_active", true).then(({ data }) => {
@@ -29,163 +40,333 @@ export default function KeluarManualPage() {
     });
   }, []);
 
+  // Fetch stock when selected product for manual outbound changes
   useEffect(() => {
-    if (selectedProductId) {
-      getStockForProduct(selectedProductId).then((stk) => {
-        setAvailableStock(stk);
+    if (keluarProductId) {
+      getStockForProduct(keluarProductId).then((stk) => {
+        setKeluarStock(stk);
       });
     } else {
-      setAvailableStock(null);
+      setKeluarStock(null);
     }
-  }, [selectedProductId]);
+  }, [keluarProductId]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // 1. Handle Barang Masuk Submit
+  const handleMasukSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setMasukError("");
+    setMasukSuccess("");
 
     if (isReadOnly) {
-      setError("Peran Anda hanya memiliki hak baca. Tidak dapat menginput keluar manual.");
+      setMasukError("Peran Anda hanya memiliki hak baca.");
+      return;
+    }
+    if (!masukProductId) {
+      setMasukError("Harap pilih produk.");
+      return;
+    }
+    if (!masukBatchCode.trim()) {
+      setMasukError("Harap isi Kode Batch.");
+      return;
+    }
+    if (!masukExpiryDate) {
+      setMasukError("Harap isi Tanggal Kedaluwarsa.");
       return;
     }
 
-    if (!selectedProductId) {
-      setError("Harap pilih produk.");
+    const qtyVal = parseInt(masukQty);
+    if (isNaN(qtyVal) || qtyVal <= 0) {
+      setMasukError("Kuantitas harus berupa angka positif.");
       return;
     }
 
-    const qtyNum = parseInt(quantity);
-    if (isNaN(qtyNum) || qtyNum <= 0) {
-      setError("Kuantitas harus berupa angka positif.");
-      return;
-    }
-
-    setLoading(true);
+    setMasukLoading(true);
     try {
-      const currentStock = await getStockForProduct(selectedProductId);
-      if (currentStock < qtyNum) {
-        setError(`Stok tidak mencukupi. Stok saat ini: ${currentStock} pcs, diminta: ${qtyNum} pcs.`);
-        setLoading(false);
+      // Check or create batch
+      const { data: existingBatches } = await supabase
+        .from("batches")
+        .select("*")
+        .eq("product_id", masukProductId)
+        .eq("batch_code", masukBatchCode.trim().toUpperCase());
+
+      let targetBatch = existingBatches && existingBatches[0];
+
+      if (!targetBatch) {
+        const { data: newBatch, error: batchError } = await supabase
+          .from("batches")
+          .insert({
+            product_id: masukProductId,
+            batch_code: masukBatchCode.trim().toUpperCase(),
+            expiry_date: masukExpiryDate,
+          })
+          .select()
+          .single();
+
+        if (batchError || !newBatch) {
+          throw new Error("Gagal mendaftarkan batch baru di database.");
+        }
+        targetBatch = newBatch;
+      }
+
+      // Write entry to stock ledger
+      const ref = masukRef.trim() || `PO-MAKLON-${Date.now().toString().slice(-6)}`;
+      const ledgerEntry = await writeLedgerEntry(
+        masukProductId,
+        targetBatch.id,
+        qtyVal,
+        "masuk_maklon",
+        "system",
+        ref
+      );
+
+      if (!ledgerEntry) {
+        throw new Error("Gagal mencatat transaksi barang masuk di Buku Besar.");
+      }
+
+      setMasukProductId("");
+      setMasukBatchCode("");
+      setMasukExpiryDate("");
+      setMasukQty("");
+      setMasukRef("");
+      setMasukSuccess(`Penerimaan barang masuk dicatat! (+${qtyVal} pcs pada batch ${targetBatch.batch_code})`);
+    } catch (err: any) {
+      setMasukError(err.message || "Gagal mencatat barang masuk.");
+    } finally {
+      setMasukLoading(false);
+    }
+  };
+
+  // 2. Handle Barang Keluar Manual Submit
+  const handleKeluarSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setKeluarError("");
+    setKeluarSuccess("");
+
+    if (isReadOnly) {
+      setKeluarError("Peran Anda hanya memiliki hak baca.");
+      return;
+    }
+    if (!keluarProductId) {
+      setKeluarError("Harap pilih produk.");
+      return;
+    }
+
+    const qtyVal = parseInt(keluarQty);
+    if (isNaN(qtyVal) || qtyVal <= 0) {
+      setKeluarError("Kuantitas harus berupa angka positif.");
+      return;
+    }
+
+    // WAJIB referensi khusus jika alasan bonus / promo
+    const isCampaignReason = keluarReason === "bonus" || keluarReason === "promo";
+    if (isCampaignReason && !keluarRef.trim()) {
+      setKeluarError("Nomor referensi / nama campaign wajib diisi untuk alasan Bonus atau Promo.");
+      return;
+    }
+
+    setKeluarLoading(true);
+    try {
+      const currentStock = await getStockForProduct(keluarProductId);
+      if (currentStock < qtyVal) {
+        setKeluarError(`Stok tidak mencukupi. Stok saat ini: ${currentStock} pcs, diminta: ${qtyVal} pcs.`);
+        setKeluarLoading(false);
         return;
       }
 
-      // 1. Run FEFO allocation to get which batches to deduct
-      const allocations = await allocateBatchFefo(selectedProductId, qtyNum);
+      // Run FEFO allocation
+      const allocations = await allocateBatchFefo(keluarProductId, qtyVal);
 
-      // 2. Write ledger entries (negative quantity)
-      const ref = referenceId.trim() || `MAN-OUT-${Date.now().toString().slice(-6)}`;
-      
+      // Write ledger entries
+      const ref = keluarRef.trim() || `MAN-OUT-${Date.now().toString().slice(-6)}`;
       await Promise.all(
         allocations.map(async (alloc) => {
           await writeLedgerEntry(
-            selectedProductId,
+            keluarProductId,
             alloc.batchId,
             -alloc.allocatedQty,
-            selectedReason,
+            keluarReason,
             "manual",
             ref
           );
         })
       );
 
-      // Reset
-      setSelectedProductId("");
-      setQuantity("");
-      setReferenceId("");
-      setSelectedReason("bonus");
-      setAvailableStock(null);
+      setKeluarProductId("");
+      setKeluarQty("");
+      setKeluarRef("");
+      setKeluarReason("bonus");
+      setKeluarStock(null);
 
-      const splitInfo = allocations
-        .map((a) => `batch ${a.batchCode} (-${a.allocatedQty} pcs)`)
-        .join(", ");
-      setSuccess(`Keluaran manual berhasil dicatat! Total -${qtyNum} pcs dialokasikan ke: ${splitInfo}.`);
+      const splitInfo = allocations.map((a) => `batch ${a.batchCode} (-${a.allocatedQty} pcs)`).join(", ");
+      setKeluarSuccess(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs dialokasikan ke: ${splitInfo}.`);
     } catch (err: any) {
-      setError(err.message || "Gagal melakukan alokasi FEFO.");
+      setKeluarError(err.message || "Gagal memotong stok.");
     } finally {
-      setLoading(false);
+      setKeluarLoading(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <SectionCard title="Input Pengeluaran Stok Manual">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 bg-danger-bg text-danger text-xs rounded border border-danger/30 font-semibold font-mono">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="p-3 bg-success-bg text-success text-xs rounded border border-success/30 font-semibold">
-              {success}
-            </div>
-          )}
+    <div className="space-y-6">
+      {/* Informative Warning Alert */}
+      <Alert variant="warning">
+        <span>⚠️</span>
+        <span>
+          <strong>PENTING:</strong> Pengeluaran manual untuk bonus, promo, atau sampel adalah sumber selisih stok terbesar. Pastikan untuk mengisi kolom <strong>Alasan</strong> dan <strong>Referensi</strong> secara lengkap demi kebenaran audit Buku Besar.
+        </span>
+      </Alert>
 
-          <Select
-            label="Pilih Produk"
-            value={selectedProductId}
-            onChange={(e) => setSelectedProductId(e.target.value)}
-            options={[
-              { value: "", label: "-- Pilih Produk --" },
-              ...products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` })),
-            ]}
-            required
-            disabled={isReadOnly || loading}
-          />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Panel 1: Barang Masuk (Maklon) */}
+        <SectionCard title="Input Penerimaan Barang Masuk (Maklon)">
+          <form onSubmit={handleMasukSubmit} className="space-y-4">
+            {masukError && (
+              <div className="p-3 bg-danger-bg text-danger text-xs rounded border border-danger/30 font-semibold font-mono">
+                {masukError}
+              </div>
+            )}
+            {masukSuccess && (
+              <div className="p-3 bg-success-bg text-success text-xs rounded border border-success/30 font-semibold">
+                {masukSuccess}
+              </div>
+            )}
 
-          {availableStock !== null && (
-            <div className="p-3 bg-primary-light text-primary text-xs rounded font-mono">
-              Stok Tersedia di Sistem: <strong>{availableStock} pcs</strong> (Alokasi otomatis dengan prinsip FEFO)
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select
-              label="Alasan Pengeluaran"
-              value={selectedReason}
-              onChange={(e) => setSelectedReason(e.target.value as LedgerReason)}
+              label="Pilih Produk"
+              value={masukProductId}
+              onChange={(e) => setMasukProductId(e.target.value)}
               options={[
-                { value: "bonus", label: "Bonus (Hadiah Pelanggan)" },
-                { value: "promo", label: "Promo Kampanye" },
-                { value: "sampel", label: "Sampel Review / R&D" },
-                { value: "penjualan_offline", label: "Penjualan Offline" },
-                { value: "rusak", label: "Barang Rusak / Cacat Fisik" },
-                { value: "kedaluwarsa", label: "Barang Kedaluwarsa" },
+                { value: "", label: "-- Pilih Produk --" },
+                ...products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` })),
               ]}
               required
-              disabled={isReadOnly || loading}
+              disabled={isReadOnly || masukLoading}
             />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Kode Batch Baru"
+                placeholder="Contoh: B-DNA-0512-B"
+                value={masukBatchCode}
+                onChange={(e) => setMasukBatchCode(e.target.value)}
+                required
+                disabled={isReadOnly || masukLoading}
+              />
+              <Input
+                label="Tanggal Kedaluwarsa"
+                type="date"
+                value={masukExpiryDate}
+                onChange={(e) => setMasukExpiryDate(e.target.value)}
+                required
+                disabled={isReadOnly || masukLoading}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Jumlah Diterima (Pcs)"
+                type="number"
+                min="1"
+                placeholder="0"
+                value={masukQty}
+                onChange={(e) => setMasukQty(e.target.value)}
+                required
+                disabled={isReadOnly || masukLoading}
+              />
+              <Input
+                label="Referensi PO / Maklon"
+                placeholder="Contoh: PO-MAKLON-002"
+                value={masukRef}
+                onChange={(e) => setMasukRef(e.target.value)}
+                disabled={isReadOnly || masukLoading}
+              />
+            </div>
+
+            <div className="pt-4 border-t border-border flex justify-end">
+              <Button type="submit" disabled={isReadOnly || masukLoading}>
+                {masukLoading ? "Memproses..." : "Catat Barang Masuk"}
+              </Button>
+            </div>
+          </form>
+        </SectionCard>
+
+        {/* Panel 2: Barang Keluar Manual */}
+        <SectionCard title="Input Pengeluaran Stok Manual">
+          <form onSubmit={handleKeluarSubmit} className="space-y-4">
+            {keluarError && (
+              <div className="p-3 bg-danger-bg text-danger text-xs rounded border border-danger/30 font-semibold font-mono">
+                {keluarError}
+              </div>
+            )}
+            {keluarSuccess && (
+              <div className="p-3 bg-success-bg text-success text-xs rounded border border-success/30 font-semibold">
+                {keluarSuccess}
+              </div>
+            )}
+
+            <Select
+              label="Pilih Produk"
+              value={keluarProductId}
+              onChange={(e) => setKeluarProductId(e.target.value)}
+              options={[
+                { value: "", label: "-- Pilih Produk --" },
+                ...products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` })),
+              ]}
+              required
+              disabled={isReadOnly || keluarLoading}
+            />
+
+            {keluarStock !== null && (
+              <div className="p-3 bg-primary-light text-ink text-xs rounded font-mono">
+                Stok Fisik Tersedia: <strong>{keluarStock} pcs</strong> (Alokasi otomatis via FEFO)
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select
+                label="Alasan Pengeluaran"
+                value={keluarReason}
+                onChange={(e) => setKeluarReason(e.target.value as LedgerReason)}
+                options={[
+                  { value: "bonus", label: "Bonus (Hadiah Pelanggan)" },
+                  { value: "promo", label: "Promo Kampanye" },
+                  { value: "sampel", label: "Sampel Review / R&D" },
+                  { value: "penjualan_offline", label: "Penjualan Offline" },
+                  { value: "rusak", label: "Barang Rusak / Cacat Fisik" },
+                  { value: "kedaluwarsa", label: "Barang Kedaluwarsa" },
+                ]}
+                required
+                disabled={isReadOnly || keluarLoading}
+              />
+              <Input
+                label="Jumlah Kuantitas Keluar (Pcs)"
+                type="number"
+                min="1"
+                placeholder="0"
+                value={keluarQty}
+                onChange={(e) => setKeluarQty(e.target.value)}
+                required
+                disabled={isReadOnly || keluarLoading}
+              />
+            </div>
 
             <Input
-              label="Jumlah Kuantitas Keluar (Pcs)"
-              type="number"
-              min="1"
-              placeholder="0"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              required
-              disabled={isReadOnly || loading}
+              label={`Nomor Referensi / Nama Campaign ${keluarReason === "bonus" || keluarReason === "promo" ? "(WAJIB)" : "(Opsional)"}`}
+              placeholder="Contoh: KAMPANYE-IG-JULI / GIFT-ORDER-12"
+              value={keluarRef}
+              onChange={(e) => setKeluarRef(e.target.value)}
+              required={keluarReason === "bonus" || keluarReason === "promo"}
+              disabled={isReadOnly || keluarLoading}
             />
-          </div>
 
-          <Input
-            label="Nomor Referensi Transaksi / Keperluan (Opsional)"
-            placeholder="Contoh: KAMPANYE-IG-JULI"
-            value={referenceId}
-            disabled={isReadOnly || loading}
-          />
-
-          <div className="pt-4 border-t border-border flex justify-end">
-            <Button
-              type="submit"
-              disabled={isReadOnly || loading}
-              className={isReadOnly ? "bg-ink-faint hover:bg-ink-faint text-white" : ""}
-            >
-              {isReadOnly ? "Read-Only (Tidak Dapat Menyimpan)" : loading ? "Memproses..." : "Catat Barang Keluar"}
-            </Button>
-          </div>
-        </form>
-      </SectionCard>
+            <div className="pt-4 border-t border-border flex justify-end">
+              <Button type="submit" disabled={isReadOnly || keluarLoading}>
+                {keluarLoading ? "Memproses..." : "Catat Barang Keluar"}
+              </Button>
+            </div>
+          </form>
+        </SectionCard>
+      </div>
     </div>
   );
 }

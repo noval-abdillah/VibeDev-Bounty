@@ -68,11 +68,16 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       </div>
 
       {/* Banner Mode Simulasi */}
-      <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-warning-bg border border-warning/20 shrink-0">
-        <IconFlask className="w-3.5 h-3.5 text-warning" />
-        <span className="font-mono text-[10px] text-warning font-bold uppercase tracking-wider">
-          MODE SIMULASI
+      <div className="flex items-center gap-4">
+        <span className="text-[11px] text-ink-faint italic font-mono hidden md:block">
+          "setiap perubahan stok punya jejak"
         </span>
+        <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-warning-bg border border-warning/20 shrink-0">
+          <IconFlask className="w-3.5 h-3.5 text-warning" />
+          <span className="font-mono text-[10px] text-warning font-bold uppercase tracking-wider">
+            MODE SIMULASI
+          </span>
+        </div>
       </div>
     </header>
   );

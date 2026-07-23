@@ -16,6 +16,7 @@ export default function ProductDetailPage() {
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [batchStocks, setBatchStocks] = useState<Record<string, number>>({});
   const [totalStock, setTotalStock] = useState(0);
+  const [reservation, setReservation] = useState(0);
 
   useEffect(() => {
     if (!id || typeof id !== "string") return;
@@ -31,11 +32,15 @@ export default function ProductDetailPage() {
 
     setProduct(prod);
 
-    const { data: bts } = await supabase
-      .from("batch_stock_summary")
-      .select("*")
-      .eq("product_id", prodId);
+    const [btsResult, ledgerResult, ordersResult, bundlesResult, compsResult] = await Promise.all([
+      supabase.from("batch_stock_summary").select("*").eq("product_id", prodId),
+      supabase.from("stock_ledger").select("*").eq("product_id", prodId).order("created_at", { ascending: false }),
+      supabase.from("orders").select("*").eq("status", "PENDING"),
+      supabase.from("bundles").select("*"),
+      supabase.from("bundle_components").select("*"),
+    ]);
 
+    const bts = btsResult.data || [];
     if (bts) {
       setBatches(bts.map(b => ({
         id: b.batch_id,
@@ -51,18 +56,34 @@ export default function ProductDetailPage() {
       setBatchStocks(bStocks);
     }
 
-    const { data: ledger } = await supabase
-      .from("stock_ledger")
-      .select("*")
-      .eq("product_id", prodId)
-      .order("created_at", { ascending: false });
-    
-    if (ledger) {
-      setLedgerEntries(ledger);
+    if (ledgerResult.data) {
+      setLedgerEntries(ledgerResult.data);
     }
 
-    const total = await getStockForProduct(prodId);
+    const total = ledgerResult.data ? ledgerResult.data.reduce((sum, e) => sum + e.qty, 0) : 0;
     setTotalStock(total);
+
+    // Compute reservations
+    const pendingOrders = ordersResult.data || [];
+    const bundles = bundlesResult.data || [];
+    const comps = compsResult.data || [];
+    
+    let resQty = 0;
+    pendingOrders.forEach((o: any) => {
+      if (o.sku.toUpperCase() === prod.sku.toUpperCase()) {
+        resQty += o.qty;
+      } else {
+        const bundle = bundles.find((b: any) => b.sku.toUpperCase() === o.sku.toUpperCase());
+        if (bundle) {
+          const bComps = comps.filter((bc) => bc.bundle_id === bundle.id);
+          const matchedComp = bComps.find((c) => c.product_id === prodId);
+          if (matchedComp) {
+            resQty += matchedComp.qty * o.qty;
+          }
+        }
+      }
+    });
+    setReservation(resQty);
   };
 
   const getReasonLabel = (reason: string) => {
@@ -97,9 +118,41 @@ export default function ProductDetailPage() {
     return <div className="text-center font-mono py-8 text-xs text-ink-soft">Memuat detail produk...</div>;
   }
 
+  const eligibleBatchesSorted = [...batches]
+    .filter(b => (batchStocks[b.id] || 0) > 0)
+    .sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
+
+  const getFefoLabel = (batchId: string) => {
+    const idx = eligibleBatchesSorted.findIndex(b => b.id === batchId);
+    if (idx === -1) return "-";
+    if (idx === 0) return "Keluar Duluan";
+    return `#${idx + 1}`;
+  };
+
+  const getExpiryBadge = (expiryDateStr: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expDate = new Date(expiryDateStr);
+    expDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = expDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      return <Tag variant="danger">Kedaluwarsa ({Math.abs(diffDays)} hari lalu)</Tag>;
+    }
+    if (diffDays <= 20) {
+      return <Tag variant="danger">{diffDays} hari lagi</Tag>;
+    }
+    if (diffDays <= 30) {
+      return <Tag variant="warning">{diffDays} hari lagi</Tag>;
+    }
+    return <Tag variant="success">Normal ({diffDays} hari)</Tag>;
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-md border border-border">
         <div>
           <button onClick={() => router.push("/produk")} className="text-xs font-semibold text-primary hover:underline block mb-1">
             &larr; Kembali ke Katalog
@@ -107,56 +160,68 @@ export default function ProductDetailPage() {
           <h2 className="font-heading text-xl font-bold text-ink">{product.name}</h2>
           <span className="font-mono text-xs text-ink-soft">SKU: {product.sku}</span>
         </div>
-        <div className="text-right">
-          <span className="text-xs font-semibold text-ink-soft uppercase block">Total Stok</span>
-          <span className="text-2xl font-bold font-mono text-primary">{totalStock.toLocaleString("id-ID")} pcs</span>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="bg-bg p-3 rounded border border-border text-center min-w-[100px]">
+            <span className="text-[10px] text-ink-soft font-semibold uppercase block">Stok Fisik</span>
+            <span className="text-lg font-bold font-mono text-ink">{totalStock.toLocaleString("id-ID")}</span>
+          </div>
+          <div className="bg-bg p-3 rounded border border-border text-center min-w-[100px]">
+            <span className="text-[10px] text-ink-soft font-semibold uppercase block">Reservasi</span>
+            <span className="text-lg font-bold font-mono text-ink-soft">{reservation.toLocaleString("id-ID")}</span>
+          </div>
+          <div className="bg-white p-3 rounded border-border-strong border text-center min-w-[100px]">
+            <span className="text-[10px] text-primary-dark font-semibold uppercase block">Aman Dijual</span>
+            <Tag variant={totalStock - reservation > 0 ? "success" : "neutral"} className="mt-1 font-bold">
+              {(totalStock - reservation).toLocaleString("id-ID")}
+            </Tag>
+          </div>
         </div>
       </div>
 
       {/* Batches section */}
       <SectionCard title="Daftar Batch Terdaftar">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {batches.map((b) => {
-            const stock = batchStocks[b.id] || 0;
-            const isExpired = new Date(b.expiry_date) < new Date();
-            
-            const today = new Date();
-            const thresholdDate = new Date();
-            const storedThreshold = localStorage.getItem("stokledger_expiry_threshold") || "30";
-            thresholdDate.setDate(today.getDate() + parseInt(storedThreshold));
-            const isNearExpiry = new Date(b.expiry_date) <= thresholdDate && new Date(b.expiry_date) >= today;
-
-            let statusTag = <Tag variant="success">NORMAL</Tag>;
-            if (isExpired) {
-              statusTag = <Tag variant="danger">KEDALUWARSA</Tag>;
-            } else if (isNearExpiry) {
-              statusTag = <Tag variant="warning">NEAR EXPIRY</Tag>;
-            }
-
-            return (
-              <div key={b.id} className="p-4 border border-border rounded-md bg-bg/25 flex flex-col justify-between gap-3">
-                <div>
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="font-mono font-bold text-xs bg-white px-2 py-0.5 rounded border border-border-strong text-ink block max-w-[150px] truncate">
-                      {b.batch_code}
-                    </span>
-                    {statusTag}
-                  </div>
-                  <div className="text-[11px] text-ink-soft mt-3 font-mono">
-                    Expiry: {new Date(b.expiry_date).toLocaleDateString("id-ID", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric"
-                    })}
-                  </div>
-                </div>
-                <div className="flex justify-between items-end border-t border-border/60 pt-2 mt-1">
-                  <span className="text-[10px] text-ink-faint uppercase font-semibold">Stok Batch</span>
-                  <span className="text-sm font-bold font-mono text-ink">{stock} pcs</span>
-                </div>
-              </div>
-            );
-          })}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-border text-ink-soft font-bold uppercase bg-bg/50">
+                <th className="py-2.5 px-3">Kode Batch</th>
+                <th className="py-2.5 px-3">Kedaluwarsa</th>
+                <th className="py-2.5 px-3 text-center">Urutan FEFO</th>
+                <th className="py-2.5 px-3">Jenis</th>
+                <th className="py-2.5 px-3 text-right">Sisa Qty</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border font-mono text-[11px]">
+              {batches.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-ink-faint font-body text-xs">
+                    Belum ada batch terdaftar untuk produk ini.
+                  </td>
+                </tr>
+              ) : (
+                batches.map((b) => {
+                  const stock = batchStocks[b.id] || 0;
+                  return (
+                    <tr key={b.id} className="hover:bg-bg/10 transition-colors">
+                      <td className="py-2.5 px-3 font-bold text-ink">{b.batch_code}</td>
+                      <td className="py-2.5 px-3 font-body">{getExpiryBadge(b.expiry_date)}</td>
+                      <td className="py-2.5 px-3 text-center">
+                        <Tag variant={getFefoLabel(b.id) === "Keluar Duluan" ? "success" : "neutral"} className="font-bold">
+                          {getFefoLabel(b.id)}
+                        </Tag>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <Tag variant="primary">Maklon</Tag>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-ink-soft">
+                        {stock.toLocaleString("id-ID")} pcs
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </SectionCard>
 

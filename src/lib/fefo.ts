@@ -14,7 +14,7 @@ interface AllocatedBatch {
  * @param qty Quantity to deduct (positive integer)
  * @returns Array of allocated batches and quantities
  */
-export async function allocateBatchFefo(productId: string, qty: number): Promise<AllocatedBatch[]> {
+export async function allocateBatchFefo(productId: string, qty: number): Promise<AllocatedBatch[]> {  
   if (qty <= 0) return [];
 
   // 1. Fetch all batches for the product

@@ -111,36 +111,60 @@ function RekonsiliasiContent() {
   }, [highlightProdId, products, harianDiscrepancies, opnameDiscrepancies]);
 
   const calculateDailyDiscrepancies = async (allProducts: Product[], allBatches: Batch[]) => {
-    // Single fast SELECT from precomputed database view
-    const { data: recSummary, error } = await supabase
-      .from("daily_reconciliation_summary")
-      .select("*")
-      .neq("discrepancy", 0)
-      .order("order_created_at", { ascending: false });
+    const [ordersResult, ledgerResult, bundlesResult, compsResult] = await Promise.all([
+      supabase.from("orders").select("*").neq("status", "PENDING").neq("status", "CANCELLED").order("created_at", { ascending: false }).limit(100),
+      supabase.from("stock_ledger").select("*").lt("qty", 0).order("created_at", { ascending: false }).limit(500),
+      supabase.from("bundles").select("*"),
+      supabase.from("bundle_components").select("*"),
+    ]);
 
-    if (error || !recSummary) return;
+    const allOrders = ordersResult.data || [];
+    const allLedger = ledgerResult.data || [];
+    const allBundles = bundlesResult.data || [];
+    const allBundleComponents = compsResult.data || [];
 
-    // Resolve component details for UI drill-down compatibility
-    const resolvedDiffs = await Promise.all(
-      recSummary.map(async (row) => {
-        // Handle single simple Single Component mapping
-        const prod = allProducts.find((p) => p.sku.toUpperCase() === row.sku.toUpperCase());
-        const productId = prod ? prod.id : "";
+    const diffs: typeof harianDiscrepancies = [];
 
-        return {
-          orderCode: row.order_code,
-          channel: row.channel,
-          sku: row.sku,
-          orderQty: row.order_qty,
-          ledgerQty: row.ledger_qty,
-          diff: row.discrepancy,
-          productId,
-          batchId: ""
-        };
-      })
-    );
+    allOrders.forEach((order) => {
+      let components: { product_id: string; qty: number }[] = [];
+      const bundle = allBundles.find((b) => b.sku.toUpperCase() === order.sku.toUpperCase());
+      
+      if (bundle) {
+        components = allBundleComponents
+          .filter((bc) => bc.bundle_id === bundle.id)
+          .map((c) => ({ product_id: c.product_id, qty: c.qty }));
+      } else {
+        const prod = allProducts.find((p) => p.sku.toUpperCase() === order.sku.toUpperCase());
+        if (prod) {
+          components = [{ product_id: prod.id, qty: 1 }];
+        }
+      }
 
-    setHarianDiscrepancies(resolvedDiffs);
+      components.forEach((comp) => {
+        const expectedDeduction = comp.qty * order.qty;
+        
+        const ledgerEntries = allLedger.filter(
+          (e) => e.reference_id === order.order_code && e.product_id === comp.product_id
+        );
+        const actualDeduction = Math.abs(ledgerEntries.reduce((sum, e) => sum + e.qty, 0));
+
+        if (expectedDeduction !== actualDeduction) {
+          const batchId = ledgerEntries[0]?.batch_id || "";
+          diffs.push({
+            orderCode: order.order_code,
+            channel: order.channel,
+            sku: order.sku,
+            orderQty: expectedDeduction,
+            ledgerQty: actualDeduction,
+            diff: expectedDeduction - actualDeduction,
+            productId: comp.product_id,
+            batchId,
+          });
+        }
+      });
+    });
+
+    setHarianDiscrepancies(diffs);
   };
 
   const handleExpandItem = async (productId: string, batchId: string, itemKey: string) => {

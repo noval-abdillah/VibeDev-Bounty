@@ -57,6 +57,46 @@ export async function POST(request: Request) {
             p_ref_id: order.order_code,
           });
           if (rpcError) throw rpcError;
+
+          // AUTOMATIC PROMO RULES APPLICATION
+          try {
+            // Find active promo rules for this product and channel
+            const { data: rules } = await admin
+              .from("promo_rules")
+              .select("id, name, min_buy_qty")
+              .eq("buy_product_id", comp.product_id)
+              .eq("is_active", true)
+              .lte("min_buy_qty", reqQty)
+              .lte("start_date", new Date().toISOString())
+              .gte("end_date", new Date().toISOString())
+              .contains("channels", [order.channel])
+              .order("min_buy_qty", { ascending: false });
+
+            const matchedRule = rules && rules[0];
+
+            if (matchedRule) {
+              // Retrieve associated free items
+              const { data: freeItems } = await admin
+                .from("promo_free_items")
+                .select("product_id, qty")
+                .eq("promo_rule_id", matchedRule.id);
+
+              if (freeItems && freeItems.length > 0) {
+                for (const item of freeItems) {
+                  // Deduct free items using FEFO
+                  await admin.rpc("process_order_fefo", {
+                    p_product_id: item.product_id,
+                    p_qty: item.qty, // fixed quantity per brief
+                    p_reason: "promo",
+                    p_channel: order.channel,
+                    p_ref_id: `PROMO-${order.order_code}`,
+                  });
+                }
+              }
+            }
+          } catch (promoErr) {
+            console.error("Failed to automatically apply promo rules:", promoErr);
+          }
         }
 
         await admin.from("orders").update({ status: new_status }).eq("id", order_id);
@@ -78,7 +118,7 @@ export async function POST(request: Request) {
 
     // 3. PROCESS RETURN INSPECTION (Server-side atomic)
     if (action === "process_return") {
-      const { return_id, order_code, channel, sku, qty, condition } = payload;
+      const { return_id, order_code, channel, sku, qty, condition, new_batch_code, new_expiry_date } = payload;
 
       if (!["layak_jual", "rusak", "hilang"].includes(condition)) {
         return NextResponse.json({ error: "Kondisi tidak valid" }, { status: 400 });
@@ -91,6 +131,8 @@ export async function POST(request: Request) {
         p_sku: sku.toUpperCase(),
         p_qty: qty,
         p_condition: condition,
+        p_batch_code: new_batch_code || null,
+        p_expiry_date: new_expiry_date || null,
       });
       if (rpcError) throw rpcError;
 

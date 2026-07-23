@@ -16,11 +16,12 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
   const [batches] = useState(serverBatches);
   const [ledgerEntries] = useState(serverLedger);
 
-  const [selectedProduct, setSelectedProduct] = useState("");
-  const [selectedReason, setSelectedReason] = useState("");
-  const [selectedChannel, setSelectedChannel] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Top right selected product for the main detailed view
+  const [selectedProduct, setSelectedProduct] = useState(products[0]?.id || "");
+  
+  // Filters for the global bottom table "Seluruh Pergerakan"
+  const [globalReason, setGlobalReason] = useState("");
+  const [globalChannel, setGlobalChannel] = useState("");
 
   const getReasonLabel = (reason: string) => {
     switch (reason) {
@@ -41,6 +42,27 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
     }
   };
 
+  const getReasonTag = (reason: string) => {
+    switch (reason) {
+      case "saldo_awal":
+      case "masuk_maklon":
+        return <Tag variant="success">{getReasonLabel(reason)}</Tag>;
+      case "penjualan_offline":
+      case "pesanan_shopee":
+      case "pesanan_tiktok":
+        return <Tag variant="primary">{getReasonLabel(reason)}</Tag>;
+      case "bonus":
+      case "promo":
+      case "sampel":
+        return <Tag variant="warning">{getReasonLabel(reason)}</Tag>;
+      case "rusak":
+      case "kedaluwarsa":
+        return <Tag variant="danger">{getReasonLabel(reason)}</Tag>;
+      default:
+        return <Tag variant="neutral">{getReasonLabel(reason)}</Tag>;
+    }
+  };
+
   const getChannelTag = (channel: string) => {
     switch (channel) {
       case "shopee": return <Tag variant="warning">SHOPEE</Tag>;
@@ -50,34 +72,27 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
     }
   };
 
-  const filteredEntries = ledgerEntries.filter((e: any) => {
-    if (selectedProduct && e.product_id !== selectedProduct) return false;
-    if (selectedReason && e.reason !== selectedReason) return false;
-    if (selectedChannel && e.channel !== selectedChannel) return false;
-    
-    if (startDate) {
-      const start = new Date(startDate).getTime();
-      const entryTime = new Date(e.created_at).getTime();
-      if (entryTime < start) return false;
-    }
-    
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      const entryTime = new Date(e.created_at).getTime();
-      if (entryTime > end.getTime()) return false;
-    }
+  // Calculate detailed views for selected product
+  const selectedProductEntries = ledgerEntries.filter(e => e.product_id === selectedProduct);
+  const saldoSekarang = selectedProductEntries.reduce((sum, e) => sum + e.qty, 0);
 
+  // Compute running balance chronologically
+  const chronoEntries = [...selectedProductEntries].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  let currentBalance = 0;
+  const entriesWithBalance = chronoEntries.map((e) => {
+    currentBalance += e.qty;
+    return { ...e, runningBalance: currentBalance };
+  });
+  const displaySelectedEntries = [...entriesWithBalance].reverse();
+
+  // Filters for bottom table (All pergerakan)
+  const filteredGlobalEntries = ledgerEntries.filter((e: any) => {
+    if (globalReason && e.reason !== globalReason) return false;
+    if (globalChannel && e.channel !== globalChannel) return false;
     return true;
   });
-
-  const handleResetFilters = () => {
-    setSelectedProduct("");
-    setSelectedReason("");
-    setSelectedChannel("");
-    setStartDate("");
-    setEndDate("");
-  };
 
   const handleExportXlsx = async () => {
     const now = new Date();
@@ -94,7 +109,7 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
       { header: "Qty (+/-)", key: "qty", width: 12 },
     ];
 
-    const rows = filteredEntries.map((e: any) => {
+    const rows = ledgerEntries.map((e: any) => {
       const prod = products.find((p: any) => p.id === e.product_id);
       const batch = batches.find((b: any) => b.id === e.batch_id);
       return {
@@ -111,18 +126,17 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
 
     const totalMasuk = rows.filter((r) => parseInt(r.qty) > 0).length;
     const totalKeluar = rows.filter((r) => parseInt(r.qty) < 0).length;
-    const sumMasuk = filteredEntries.filter((e: any) => e.qty > 0).reduce((s: number, e: any) => s + e.qty, 0);
-    const sumKeluar = Math.abs(filteredEntries.filter((e: any) => e.qty < 0).reduce((s: number, e: any) => s + e.qty, 0));
+    const sumMasuk = ledgerEntries.filter((e: any) => e.qty > 0).reduce((s: number, e: any) => s + e.qty, 0);
+    const sumKeluar = Math.abs(ledgerEntries.filter((e: any) => e.qty < 0).reduce((s: number, e: any) => s + e.qty, 0));
 
     const ledgerSheet: ExportSheet = {
-      name: "Data Transaksi",
+      name: "Buku Besar",
       columns,
       rows,
       summaryRows: [
         { label: "Total Transaksi", value: `${rows.length} baris` },
         { label: "Transaksi Masuk", value: `${totalMasuk} (${sumMasuk.toLocaleString("id-ID")} unit)` },
         { label: "Transaksi Keluar", value: `${totalKeluar} (${sumKeluar.toLocaleString("id-ID")} unit)` },
-        { label: "Periode Data", value: rows.length > 0 ? `${formatDate(filteredEntries[filteredEntries.length - 1]?.created_at)} — ${formatDate(filteredEntries[0]?.created_at)}` : "-" },
         { label: "Diekspor Pada", value: now.toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) },
       ],
     };
@@ -136,136 +150,195 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
 
   return (
     <div className="space-y-6">
-      <SectionCard title="Filter Buku Besar">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      {/* Top Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-md border border-border">
+        <div>
+          <span className="text-xs text-ink-faint font-semibold uppercase block">Analisis Produk Terpilih</span>
+          <h2 className="font-heading text-lg font-bold text-ink mt-0.5">
+            {products.find(p => p.id === selectedProduct)?.name || "Silakan pilih produk"}
+          </h2>
+        </div>
+        <div className="w-72 shrink-0">
           <Select
-            label="Produk"
+            label="Pilih Produk Analisis"
             value={selectedProduct}
             onChange={(e) => setSelectedProduct(e.target.value)}
             options={[
-              { value: "", label: "-- Semua Produk --" },
+              { value: "", label: "-- Pilih Produk --" },
               ...products.map((p: any) => ({ value: p.id, label: `${p.name} (${p.sku})` })),
             ]}
           />
-          <Select
-            label="Alasan Pergerakan"
-            value={selectedReason}
-            onChange={(e) => setSelectedReason(e.target.value)}
-            options={[
-              { value: "", label: "-- Semua Alasan --" },
-              { value: "saldo_awal", label: "Saldo Awal Produk" },
-              { value: "masuk_maklon", label: "Barang Masuk Maklon" },
-              { value: "penjualan_offline", label: "Penjualan Offline" },
-              { value: "bonus", label: "Keluar Bonus" },
-              { value: "promo", label: "Keluar Promo" },
-              { value: "sampel", label: "Keluar Sampel" },
-              { value: "rusak", label: "Barang Rusak" },
-              { value: "kedaluwarsa", label: "Kedaluwarsa" },
-              { value: "pesanan_shopee", label: "Pesanan Shopee" },
-              { value: "pesanan_tiktok", label: "Pesanan TikTok" },
-              { value: "retur_shopee", label: "Retur Shopee" },
-              { value: "retur_tiktok", label: "Retur TikTok" },
-              { value: "opname_koreksi", label: "Koreksi Stok Opname" },
-            ]}
-          />
-          <Select
-            label="Channel"
-            value={selectedChannel}
-            onChange={(e) => setSelectedChannel(e.target.value)}
-            options={[
-              { value: "", label: "-- Semua Channel --" },
-              { value: "shopee", label: "Shopee" },
-              { value: "tiktok", label: "TikTok" },
-              { value: "manual", label: "Manual" },
-              { value: "system", label: "System" },
-            ]}
-          />
-          <Input
-            label="Tanggal Mulai"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-          <Input
-            label="Tanggal Selesai"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
         </div>
-        <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-border/60">
-          <Button variant="ghost" onClick={handleResetFilters}>
-            Atur Ulang Filter
-          </Button>
-          <Button variant="primary" onClick={handleExportXlsx}>
-            Ekspor Excel
-          </Button>
-        </div>
-      </SectionCard>
+      </div>
 
-      <SectionCard title={`Catatan Transaksi (${filteredEntries.length} pergerakan)`}>
-        <div className="border border-border rounded-md overflow-hidden bg-[#FAFAF9]">
-          <div className="px-4 py-3 bg-white border-b border-border flex justify-between text-xs font-bold text-ink-soft">
-            <span>PRODUK &amp; DETAIL TRANSAKSI</span>
-            <span className="text-right">JUMLAH (QTY)</span>
-          </div>
-          <div className="divide-y divide-dashed divide-border-strong">
-            {filteredEntries.length === 0 ? (
-              <div className="p-8 text-center text-xs text-ink-faint font-mono">
-                Tidak ada entri Buku Besar yang cocok dengan filter.
+      {selectedProduct && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+          {/* Card Saldo Sekarang */}
+          <div className="lg:col-span-1">
+            <SectionCard title="Saldo Sekarang">
+              <div className="py-4 text-center">
+                <span className="text-4xl font-bold font-mono text-primary block">
+                  {saldoSekarang.toLocaleString("id-ID")}
+                </span>
+                <span className="text-xs text-ink-faint font-medium block mt-2">
+                  Total kuantitas barang fisik terakumulasi dalam Buku Besar untuk produk ini.
+                </span>
               </div>
-            ) : (
-              filteredEntries.map((e: any) => {
-                const prod = products.find((p: any) => p.id === e.product_id);
-                const batch = batches.find((b: any) => b.id === e.batch_id);
-                const isPositive = e.qty > 0;
+            </SectionCard>
 
-                return (
-                  <div key={e.id} className="p-4 hover:bg-white transition-colors duration-100 flex justify-between items-center gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${isPositive ? "text-success" : "text-danger"}`}>
-                          {isPositive ? "▲" : "▼"}
-                        </span>
-                        <span className="text-xs font-bold text-ink font-heading">{prod?.name || "Produk dihapus"}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-soft">
-                        <span className="font-mono text-ink">SKU: {prod?.sku}</span>
-                        <span>&bull;</span>
-                        <span className="font-mono bg-primary-light px-1.5 py-0.5 rounded text-primary-dark">
-                          Batch: {batch?.batch_code || e.batch_id}
-                        </span>
-                        <span>&bull;</span>
-                        <span>{getReasonLabel(e.reason)}</span>
-                        <span>&bull;</span>
-                        {getChannelTag(e.channel)}
-                        {e.reference_id && (
-                          <>
-                            <span>&bull;</span>
-                            <span className="font-mono text-ink-faint">{e.reference_id}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right flex flex-col items-end">
-                      <span className={`text-sm font-bold font-mono ${isPositive ? "text-success" : "text-danger"}`}>
-                        {isPositive ? `+${e.qty}` : e.qty}
-                      </span>
-                      <span className="text-[10px] text-ink-faint font-mono mt-0.5">
-                        {new Date(e.created_at).toLocaleDateString("id-ID", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            <div className="mt-4 p-4 bg-bg rounded border border-border">
+              <span className="text-xs text-danger font-semibold flex items-center gap-1.5 leading-relaxed">
+                <span>⚠️</span>
+                <span>Tidak ada baris yang bisa diedit — koreksi selalu lewat baris baru.</span>
+              </span>
+            </div>
           </div>
+
+          {/* List Ringkas Pergerakan Produk Terpilih */}
+          <div className="lg:col-span-3">
+            <SectionCard 
+              title="Pergerakan Detail & Saldo Berjalan"
+              action={
+                <Button variant="ghost" className="text-[10px] px-2 py-1" onClick={handleExportXlsx}>
+                  Ekspor Excel
+                </Button>
+              }
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-ink-soft font-bold uppercase bg-bg/50">
+                      <th className="py-2.5 px-3">Waktu</th>
+                      <th className="py-2.5 px-3">Alasan</th>
+                      <th className="py-2.5 px-3">Kanal</th>
+                      <th className="py-2.5 px-3">Batch</th>
+                      <th className="py-2.5 px-3">Referensi</th>
+                      <th className="py-2.5 px-3 text-right">Qty</th>
+                      <th className="py-2.5 px-3 text-right">Saldo Berjalan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dashed divide-border font-mono text-[11px]">
+                    {displaySelectedEntries.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-ink-faint font-body text-xs">
+                          Belum ada transaksi tercatat untuk produk ini.
+                        </td>
+                      </tr>
+                    ) : (
+                      displaySelectedEntries.map((e: any) => {
+                        const batch = batches.find((b: any) => b.id === e.batch_id);
+                        const isPositive = e.qty > 0;
+                        return (
+                          <tr key={e.id} className="hover:bg-bg/20 transition-colors">
+                            <td className="py-2.5 px-3 whitespace-nowrap text-ink-faint">{formatDate(e.created_at)}</td>
+                            <td className="py-2.5 px-3">{getReasonTag(e.reason)}</td>
+                            <td className="py-2.5 px-3">{getChannelTag(e.channel)}</td>
+                            <td className="py-2.5 px-3 text-primary-dark font-semibold">{batch?.batch_code || "-"}</td>
+                            <td className="py-2.5 px-3 text-ink-soft truncate max-w-[120px]">{e.reference_id}</td>
+                            <td className={`py-2.5 px-3 text-right font-bold ${isPositive ? "text-success" : "text-danger"}`}>
+                              {isPositive ? `+${e.qty}` : e.qty}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-bold text-ink-soft">
+                              {e.runningBalance.toLocaleString("id-ID")}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          </div>
+        </div>
+      )}
+
+      {/* Global Table: Seluruh Pergerakan */}
+      <SectionCard title="Seluruh Pergerakan (Semua Produk)">
+        <div className="flex flex-wrap items-center gap-4 mb-4 bg-bg/40 p-3 rounded border border-border">
+          <div className="w-56">
+            <Select
+              label="Semua Alasan"
+              value={globalReason}
+              onChange={(e) => setGlobalReason(e.target.value)}
+              options={[
+                { value: "", label: "-- Semua Alasan --" },
+                { value: "saldo_awal", label: "Saldo Awal Produk" },
+                { value: "masuk_maklon", label: "Barang Masuk Maklon" },
+                { value: "penjualan_offline", label: "Penjualan Offline" },
+                { value: "bonus", label: "Keluar Bonus" },
+                { value: "promo", label: "Keluar Promo" },
+                { value: "sampel", label: "Keluar Sampel" },
+                { value: "rusak", label: "Barang Rusak" },
+                { value: "kedaluwarsa", label: "Barang Kedaluwarsa" },
+                { value: "pesanan_shopee", label: "Pesanan Shopee" },
+                { value: "pesanan_tiktok", label: "Pesanan TikTok" },
+                { value: "retur_shopee", label: "Retur Shopee" },
+                { value: "retur_tiktok", label: "Retur TikTok" },
+                { value: "opname_koreksi", label: "Koreksi Stok Opname" },
+              ]}
+            />
+          </div>
+          <div className="w-56">
+            <Select
+              label="Semua Channel"
+              value={globalChannel}
+              onChange={(e) => setGlobalChannel(e.target.value)}
+              options={[
+                { value: "", label: "-- Semua Channel --" },
+                { value: "shopee", label: "Shopee" },
+                { value: "tiktok", label: "TikTok Shop" },
+                { value: "manual", label: "Manual" },
+                { value: "system", label: "System" },
+              ]}
+            />
+          </div>
+          <div className="ml-auto mt-4 md:mt-0">
+            <Button variant="ghost" onClick={() => { setGlobalReason(""); setGlobalChannel(""); }}>
+              Reset Filter
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-border text-ink-soft font-bold uppercase bg-bg/50">
+                <th className="py-2.5 px-3">Waktu</th>
+                <th className="py-2.5 px-3">Produk</th>
+                <th className="py-2.5 px-3">Alasan</th>
+                <th className="py-2.5 px-3">Channel</th>
+                <th className="py-2.5 px-3">Referensi</th>
+                <th className="py-2.5 px-3 text-right">Qty</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border font-mono text-[11px]">
+              {filteredGlobalEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-ink-faint font-body text-xs">
+                    Tidak ada entri Buku Besar terdaftar.
+                  </td>
+                </tr>
+              ) : (
+                filteredGlobalEntries.slice(0, 100).map((e: any) => {
+                  const prod = products.find((p: any) => p.id === e.product_id);
+                  const isPositive = e.qty > 0;
+                  return (
+                    <tr key={e.id} className="hover:bg-bg/25 transition-colors">
+                      <td className="py-2.5 px-3 text-ink-faint">{formatDate(e.created_at)}</td>
+                      <td className="py-2.5 px-3 font-body font-semibold text-ink">{prod?.name || "-"}</td>
+                      <td className="py-2.5 px-3">{getReasonTag(e.reason)}</td>
+                      <td className="py-2.5 px-3">{getChannelTag(e.channel)}</td>
+                      <td className="py-2.5 px-3 text-ink-soft">{e.reference_id}</td>
+                      <td className={`py-2.5 px-3 text-right font-bold ${isPositive ? "text-success" : "text-danger"}`}>
+                        {isPositive ? `+${e.qty}` : e.qty}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </SectionCard>
     </div>
