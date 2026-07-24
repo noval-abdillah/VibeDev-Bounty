@@ -101,6 +101,7 @@ export default function ProductDetailPage() {
       case "retur_shopee": return "Retur Shopee";
       case "retur_tiktok": return "Retur TikTok";
       case "opname_koreksi": return "Koreksi Stok Opname";
+      case "koreksi_salah_input": return "Koreksi Salah Input";
       default: return reason;
     }
   };

@@ -19,6 +19,16 @@ export default function ReturPage() {
   // Layak jual batch inputs map: returnId -> { batchCode, expiryDate, error }
   const [layakInputs, setLayakInputs] = useState<Record<string, { batchCode: string; expiryDate: string; error?: string }>>({});
 
+  // Screen confirmation state (intentional friction before commit)
+  const [confirmData, setConfirmData] = useState<{
+    productName: string;
+    qty: number;
+    reason: string;
+    channel: string;
+    dampak: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -32,13 +42,13 @@ export default function ReturPage() {
   };
 
   const getTiktokClaimDays = (r: ReturnItem) => {
-    if (r.channel !== "tiktok" || !r.received_at) return null;
-    const receivedDate = new Date(r.received_at);
-    const elapsedDays = Math.floor((Date.now() - receivedDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (r.channel !== "tiktok") return null;
+    const createdDate = new Date(r.created_at);
+    const elapsedDays = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
     return 40 - elapsedDays;
   };
 
-  const handleAction = async (ret: ReturnItem, condition: "layak_jual" | "rusak" | "hilang") => {
+  const handleAction = (ret: ReturnItem, condition: "layak_jual" | "rusak" | "hilang") => {
     if (isReadOnly) return;
 
     // Validation for layak_jual
@@ -62,41 +72,54 @@ export default function ReturPage() {
       payloadExpiryDate = input.expiryDate;
     }
 
-    setLoading(true);
-    try {
-      const res = await fetch("/api/webhook/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "process_return",
-          payload: {
-            return_id: ret.id,
-            order_code: ret.order_code,
-            channel: ret.channel,
-            sku: ret.sku,
-            qty: ret.qty,
-            condition,
-            new_batch_code: payloadBatchCode,
-            new_expiry_date: payloadExpiryDate,
-          }
-        }),
-      });
+    const prodName = products.find(p => p.sku === ret.sku)?.name || ret.sku;
+    const reasonLabel = condition === "layak_jual" ? "Retur Layak Jual (Restok)" : condition === "rusak" ? "Retur Rusak (Write-off)" : "Retur Hilang (Write-off)";
+    const dampakLabel = condition === "layak_jual" ? `Stok fisik & aman dijual bertambah (+${ret.qty} unit)` : "Stok fisik tetap (loss recorded)";
 
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error);
+    setConfirmData({
+      productName: prodName,
+      qty: ret.qty,
+      reason: reasonLabel,
+      channel: ret.channel === "shopee" ? "Shopee" : "TikTok Shop",
+      dampak: dampakLabel,
+      action: async () => {
+        setLoading(true);
+        try {
+          const res = await fetch("/api/webhook/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "process_return",
+              payload: {
+                return_id: ret.id,
+                order_code: ret.order_code,
+                channel: ret.channel,
+                sku: ret.sku,
+                qty: ret.qty,
+                condition,
+                new_batch_code: payloadBatchCode,
+                new_expiry_date: payloadExpiryDate,
+              }
+            }),
+          });
 
-      // Clean input state
-      const updatedInputs = { ...layakInputs };
-      delete updatedInputs[ret.id];
-      setLayakInputs(updatedInputs);
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error);
 
-      alert(`Sukses memproses inspeksi retur order ${ret.order_code} sebagai ${condition.toUpperCase().replace("_", " ")}.`);
-      fetchData();
-    } catch (err: any) {
-      alert(err.message || "Gagal memproses retur.");
-    } finally {
-      setLoading(false);
-    }
+          // Clean input state
+          const updatedInputs = { ...layakInputs };
+          delete updatedInputs[ret.id];
+          setLayakInputs(updatedInputs);
+
+          alert(`Sukses memproses inspeksi retur order ${ret.order_code} sebagai ${condition.toUpperCase().replace("_", " ")}.`);
+          fetchData();
+        } catch (err: any) {
+          alert(err.message || "Gagal memproses retur.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   };
 
   const toggleLayakForm = (retId: string) => {
@@ -313,6 +336,60 @@ export default function ReturPage() {
           </table>
         </div>
       </SectionCard>
+
+      {/* Confirmation Modal Overlay (Intentional Friction) */}
+      {confirmData && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-primary max-w-md w-full rounded-md p-6 space-y-4 shadow-xl">
+            <h3 className="font-heading text-lg font-bold text-ink border-b border-border pb-2">
+              Konfirmasi Keputusan Retur
+            </h3>
+            
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-ink-soft block uppercase tracking-wider font-semibold">Produk:</span>
+                <span className="text-sm font-bold text-ink">{confirmData.productName}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Jumlah (Qty):</span>
+                  <span className="text-sm font-bold text-primary font-mono">{confirmData.qty} unit</span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Keputusan:</span>
+                  <span className="text-sm font-bold text-ink">{confirmData.reason}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Kanal:</span>
+                  <span className="text-sm font-bold text-ink">{confirmData.channel}</span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Dampak Stok:</span>
+                  <span className="text-sm font-bold text-success font-mono">{confirmData.dampak}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-danger-bg text-danger text-[11px] font-semibold rounded border border-danger/25">
+              ⚠️ Peringatan: Tindakan ini permanen. Hasil inspeksi retur akan langsung dicatat secara permanen untuk audit.
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="ghost" disabled={loading} onClick={() => setConfirmData(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" disabled={loading} onClick={async () => {
+                await confirmData.action();
+                setConfirmData(null);
+              }}>
+                {loading ? "Memproses..." : "Konfirmasi & Komit"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

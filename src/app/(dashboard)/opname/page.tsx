@@ -27,6 +27,13 @@ export default function StokOpnamePage() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Screen confirmation state (intentional friction before commit)
+  const [confirmData, setConfirmData] = useState<{
+    adjustmentsCount: number;
+    adjustmentsList: { name: string; batch: string; diff: number }[];
+    action: () => Promise<void>;
+  } | null>(null);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -173,14 +180,10 @@ export default function StokOpnamePage() {
     setError("");
     setSuccess("");
 
-    if (!confirm("Apakah Anda yakin ingin menyelesaikan opname? Aksi ini akan menulis baris koreksi baru ke Buku Besar untuk setiap selisih.")) {
-      return;
-    }
-
-    setLoading(true);
     try {
       const finalItems: { product_id: string; batch_id: string; physical_qty: number; system_qty: number }[] = [];
       const adjustments: { product_id: string; batch_id: string; diff: number }[] = [];
+      const adjustmentsDetailList: { name: string; batch: string; diff: number }[] = [];
 
       for (const p of products) {
         const pBatches = batches.filter((b) => b.product_id === p.id);
@@ -207,53 +210,81 @@ export default function StokOpnamePage() {
               batch_id: b.id,
               diff,
             });
+            adjustmentsDetailList.push({
+              name: p.name,
+              batch: b.batch_code,
+              diff,
+            });
           }
         }
       }
 
-      // 1. Save final items
-      await supabase.from("opname_items").delete().eq("session_id", activeSession.id);
-      await supabase.from("opname_items").insert(
-        finalItems.map((item) => ({
-          session_id: activeSession.id,
-          product_id: item.product_id,
-          batch_id: item.batch_id,
-          physical_qty: item.physical_qty,
-          system_qty: item.system_qty,
-        }))
-      );
+      setConfirmData({
+        adjustmentsCount: adjustments.length,
+        adjustmentsList: adjustmentsDetailList,
+        action: async () => {
+          setLoading(true);
+          try {
+            // 1. Save final items
+            await supabase.from("opname_items").delete().eq("session_id", activeSession.id);
+            await supabase.from("opname_items").insert(
+              finalItems.map((item) => ({
+                session_id: activeSession.id,
+                product_id: item.product_id,
+                batch_id: item.batch_id,
+                physical_qty: item.physical_qty,
+                system_qty: item.system_qty,
+              }))
+            );
 
-      // 2. FIRST: write ledger corrections
-      await Promise.all(
-        adjustments.map(async (adj) => {
-          await writeLedgerEntry(
-            adj.product_id,
-            adj.batch_id,
-            adj.diff,
-            "opname_koreksi",
-            "system",
-            `OPNAME-CORR-${activeSession.id.slice(-6)}`
-          );
-        })
-      );
+            // 2. FIRST: write ledger corrections
+            await Promise.all(
+              adjustments.map(async (adj) => {
+                await writeLedgerEntry(
+                  adj.product_id,
+                  adj.batch_id,
+                  adj.diff,
+                  "opname_koreksi",
+                  "system",
+                  `OPNAME-CORR-${activeSession.id.slice(-6)}`
+                );
+              })
+            );
 
-      // 3. THEN: mark session completed (only after ledger entries are consistent)
-      await supabase
-        .from("opname_sessions")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", activeSession.id);
+            // Update all previous saldo_awal entries for these products to is_verified = true
+            const opnameProductIds = Array.from(new Set(finalItems.map((item) => item.product_id)));
+            await Promise.all(
+              opnameProductIds.map(async (pid) => {
+                await supabase
+                  .from("stock_ledger")
+                  .update({ is_verified: true })
+                  .eq("product_id", pid)
+                  .eq("reason", "saldo_awal");
+              })
+            );
 
-      setSuccess(`Opname selesai! Menulis ${adjustments.length} entri koreksi ke Buku Besar.`);
-      setActiveSession(null);
-      setPhysicalCounts({});
-      await loadSessions();
+            // 3. THEN: mark session completed (only after ledger entries are consistent)
+            await supabase
+              .from("opname_sessions")
+              .update({
+                status: "completed",
+                completed_at: new Date().toISOString(),
+              })
+              .eq("id", activeSession.id);
+
+            setSuccess(`Opname selesai! Menulis ${adjustments.length} entri koreksi ke Buku Besar.`);
+            setActiveSession(null);
+            setPhysicalCounts({});
+            await loadSessions();
+          } catch (err: any) {
+            setError(err.message || "Gagal merampungkan opname.");
+          } finally {
+            setLoading(false);
+          }
+        }
+      });
     } catch (err: any) {
-      setError(err.message || "Gagal merampungkan opname.");
-    } finally {
-      setLoading(false);
+      setError(err.message || "Gagal memproses hitungan fisik.");
     }
   };
 
@@ -430,6 +461,62 @@ export default function StokOpnamePage() {
           </table>
         </div>
       </SectionCard>
+
+      {/* Confirmation Modal Overlay (Intentional Friction) */}
+      {confirmData && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-primary max-w-lg w-full rounded-md p-6 space-y-4 shadow-xl">
+            <h3 className="font-heading text-lg font-bold text-ink border-b border-border pb-2">
+              Konfirmasi Koreksi Stok Opname
+            </h3>
+            
+            <div className="space-y-2 text-xs">
+              <div className="max-h-48 overflow-y-auto border border-border rounded p-2 bg-bg/20 space-y-1">
+                <span className="text-[10px] text-ink-soft block uppercase tracking-wider font-semibold">Daftar Penyesuaian:</span>
+                {confirmData.adjustmentsList.length === 0 ? (
+                  <span className="text-ink-faint">Tidak ada selisih yang perlu disesuaikan (Cocok 100%).</span>
+                ) : (
+                  confirmData.adjustmentsList.map((adj, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-1 border-b border-border/30 last:border-0 font-mono text-[10px]">
+                      <span>{adj.name} (Batch: {adj.batch})</span>
+                      <span className={`font-bold ${adj.diff > 0 ? "text-success" : "text-danger"}`}>
+                        {adj.diff > 0 ? `+${adj.diff}` : adj.diff} pcs
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Total Batch Dikoreksi:</span>
+                  <span className="text-sm font-bold text-primary font-mono">{confirmData.adjustmentsCount} batch</span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Dampak Stok:</span>
+                  <span className="text-sm font-bold text-success font-mono">Penyesuaian tertulis ke Buku Besar</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-danger-bg text-danger text-[11px] font-semibold rounded border border-danger/25">
+              ⚠️ Peringatan: Tindakan ini permanen. Penyesuaian opname akan langsung ditulis sebagai entri koreksi baru di Buku Besar. Riwayat ini tidak dapat diubah atau dihapus.
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="ghost" disabled={loading} onClick={() => setConfirmData(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" disabled={loading} onClick={async () => {
+                await confirmData.action();
+                setConfirmData(null);
+              }}>
+                {loading ? "Menyimpan..." : "Konfirmasi & Koreksi"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

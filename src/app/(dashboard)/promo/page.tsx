@@ -51,6 +51,13 @@ export default function PromoPage() {
     { product_id: "", qty: 1 }
   ]);
 
+  // Screen confirmation state (intentional friction before commit)
+  const [confirmData, setConfirmData] = useState<{
+    promoName: string;
+    description: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -143,61 +150,73 @@ export default function PromoPage() {
       return;
     }
 
-    setLoading(true);
-    try {
-      // 1. Insert Promo Rule
-      const { data: newRule, error: ruleErr } = await supabase
-        .from("promo_rules")
-        .insert({
-          name: promoName.trim(),
-          buy_product_id: buyProductId,
-          min_buy_qty: minBuy,
-          start_date: new Date(startDate).toISOString(),
-          end_date: new Date(endDate).toISOString(),
-          channels,
-          is_active: true
-        })
-        .select()
-        .single();
+    const buyProductName = products.find(p => p.id === buyProductId)?.name || "Produk";
+    const freeItemsSummary = validFreeItems.map(item => {
+      const freeProductName = products.find(p => p.id === item.product_id)?.name || "Produk";
+      return `${item.qty}x ${freeProductName}`;
+    }).join(", ");
 
-      if (ruleErr || !newRule) throw new Error(ruleErr?.message || "Gagal membuat aturan promo.");
+    setConfirmData({
+      promoName: promoName.trim(),
+      description: `Beli ${minBuy}x ${buyProductName} ➔ Gratis ${freeItemsSummary}`,
+      action: async () => {
+        setLoading(true);
+        try {
+          // 1. Insert Promo Rule
+          const { data: newRule, error: ruleErr } = await supabase
+            .from("promo_rules")
+            .insert({
+              name: promoName.trim(),
+              buy_product_id: buyProductId,
+              min_buy_qty: minBuy,
+              start_date: new Date(startDate).toISOString(),
+              end_date: new Date(endDate).toISOString(),
+              channels,
+              is_active: true
+            })
+            .select()
+            .single();
 
-      // 2. Insert Free Items
-      const { error: itemsErr } = await supabase
-        .from("promo_free_items")
-        .insert(
-          validFreeItems.map(item => ({
-            promo_rule_id: newRule.id,
-            product_id: item.product_id,
-            qty: item.qty
-          }))
-        );
+          if (ruleErr || !newRule) throw new Error(ruleErr?.message || "Gagal membuat aturan promo.");
 
-      if (itemsErr) {
-        // Cleanup rule if free items insert fails
-        await supabase.from("promo_rules").delete().eq("id", newRule.id);
-        throw itemsErr;
+          // 2. Insert Free Items
+          const { error: itemsErr } = await supabase
+            .from("promo_free_items")
+            .insert(
+              validFreeItems.map(item => ({
+                promo_rule_id: newRule.id,
+                product_id: item.product_id,
+                qty: item.qty
+              }))
+            );
+
+          if (itemsErr) {
+            // Cleanup rule if free items insert fails
+            await supabase.from("promo_rules").delete().eq("id", newRule.id);
+            throw itemsErr;
+          }
+
+          setPromoName("");
+          setBuyProductId("");
+          setMinBuyQty("1");
+          setNewFreeItems([{ product_id: "", qty: 1 }]);
+          
+          const today = new Date();
+          const yyyy = today.getFullYear();
+          const mm = String(today.getMonth() + 1).padStart(2, '0');
+          const dd = String(today.getDate()).padStart(2, '0');
+          setStartDate(`${yyyy}-${mm}-${dd}T00:00`);
+          setEndDate(`${yyyy}-${mm}-${dd}T23:59`);
+
+          setSuccess("Aturan promo baru berhasil disimpan.");
+          fetchData();
+        } catch (err: any) {
+          setError(err.message || "Gagal menyimpan aturan promo.");
+        } finally {
+          setLoading(false);
+        }
       }
-
-      setPromoName("");
-      setBuyProductId("");
-      setMinBuyQty("1");
-      setNewFreeItems([{ product_id: "", qty: 1 }]);
-      
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      setStartDate(`${yyyy}-${mm}-${dd}T00:00`);
-      setEndDate(`${yyyy}-${mm}-${dd}T23:59`);
-
-      setSuccess("Aturan promo baru berhasil disimpan.");
-      fetchData();
-    } catch (err: any) {
-      setError(err.message || "Gagal menyimpan aturan promo.");
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const handleToggleRuleActive = async (id: string, currentStatus: boolean) => {
@@ -459,6 +478,54 @@ export default function PromoPage() {
           </SectionCard>
         </div>
       </div>
+
+      {/* Confirmation Modal (Intentional Friction) */}
+      {confirmData && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-primary max-w-md w-full rounded-md p-6 space-y-4 shadow-xl">
+            <h3 className="font-heading text-lg font-bold text-ink border-b border-border pb-2">
+              Konfirmasi Aturan Promo
+            </h3>
+            
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-ink-soft block uppercase tracking-wider font-semibold">Nama Promo:</span>
+                <span className="text-sm font-bold text-ink">{confirmData.promoName}</span>
+              </div>
+              <div>
+                <span className="text-ink-soft block uppercase tracking-wider font-semibold">Mekanisme Promo:</span>
+                <span className="text-sm font-bold text-primary font-mono">{confirmData.description}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Status Awal:</span>
+                  <span className="text-sm font-bold text-ink">Langsung Aktif</span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Dampak:</span>
+                  <span className="text-sm font-bold text-success font-mono">Pecah stok bonus otomatis saat order Dikirim</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-danger-bg text-danger text-[11px] font-semibold rounded border border-danger/25">
+              ⚠️ Peringatan: Aturan promo baru ini akan langsung diaktifkan di marketplace yang dicentang. Histori order lama yang sudah tercatat tidak akan berubah.
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="ghost" disabled={loading} onClick={() => setConfirmData(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" disabled={loading} onClick={async () => {
+                await confirmData.action();
+                setConfirmData(null);
+              }}>
+                {loading ? "Menyimpan..." : "Konfirmasi & Aktifkan"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

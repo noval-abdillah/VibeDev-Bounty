@@ -34,6 +34,17 @@ export default function ManualPage() {
   const [keluarSuccess, setKeluarSuccess] = useState("");
   const [keluarLoading, setKeluarLoading] = useState(false);
 
+  // Screen confirmation state (intentional friction before commit)
+  const [confirmData, setConfirmData] = useState<{
+    type: "masuk" | "keluar";
+    productName: string;
+    qty: number;
+    reason: string;
+    channel: string;
+    dampak: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
   useEffect(() => {
     supabase.from("products").select("*").eq("is_active", true).then(({ data }) => {
       if (data) setProducts(data);
@@ -51,8 +62,8 @@ export default function ManualPage() {
     }
   }, [keluarProductId]);
 
-  // 1. Handle Barang Masuk Submit
-  const handleMasukSubmit = async (e: React.FormEvent) => {
+  // 1. Handle Barang Masuk Submit (Friction confirmation first)
+  const handleMasukSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setMasukError("");
     setMasukSuccess("");
@@ -80,63 +91,74 @@ export default function ManualPage() {
       return;
     }
 
-    setMasukLoading(true);
-    try {
-      // Check or create batch
-      const { data: existingBatches } = await supabase
-        .from("batches")
-        .select("*")
-        .eq("product_id", masukProductId)
-        .eq("batch_code", masukBatchCode.trim().toUpperCase());
+    // Trigger confirmation screen
+    setConfirmData({
+      type: "masuk",
+      productName: products.find(p => p.id === masukProductId)?.name || "Produk",
+      qty: qtyVal,
+      reason: "Barang Masuk Maklon",
+      channel: "System",
+      dampak: `Stok fisik & aman dijual bertambah (+${qtyVal} unit)`,
+      action: async () => {
+        setMasukLoading(true);
+        try {
+          // Check or create batch
+          const { data: existingBatches } = await supabase
+            .from("batches")
+            .select("*")
+            .eq("product_id", masukProductId)
+            .eq("batch_code", masukBatchCode.trim().toUpperCase());
 
-      let targetBatch = existingBatches && existingBatches[0];
+          let targetBatch = existingBatches && existingBatches[0];
 
-      if (!targetBatch) {
-        const { data: newBatch, error: batchError } = await supabase
-          .from("batches")
-          .insert({
-            product_id: masukProductId,
-            batch_code: masukBatchCode.trim().toUpperCase(),
-            expiry_date: masukExpiryDate,
-          })
-          .select()
-          .single();
+          if (!targetBatch) {
+            const { data: newBatch, error: batchError } = await supabase
+              .from("batches")
+              .insert({
+                product_id: masukProductId,
+                batch_code: masukBatchCode.trim().toUpperCase(),
+                expiry_date: masukExpiryDate,
+              })
+              .select()
+              .single();
 
-        if (batchError || !newBatch) {
-          throw new Error("Gagal mendaftarkan batch baru di database.");
+            if (batchError || !newBatch) {
+              throw new Error("Gagal mendaftarkan batch baru di database.");
+            }
+            targetBatch = newBatch;
+          }
+
+          // Write entry to stock ledger
+          const ref = masukRef.trim() || `PO-MAKLON-${Date.now().toString().slice(-6)}`;
+          const ledgerEntry = await writeLedgerEntry(
+            masukProductId,
+            targetBatch.id,
+            qtyVal,
+            "masuk_maklon",
+            "system",
+            ref
+          );
+
+          if (!ledgerEntry) {
+            throw new Error("Gagal mencatat transaksi barang masuk di Buku Besar.");
+          }
+
+          setMasukProductId("");
+          setMasukBatchCode("");
+          setMasukExpiryDate("");
+          setMasukQty("");
+          setMasukRef("");
+          setMasukSuccess(`Penerimaan barang masuk dicatat! (+${qtyVal} pcs pada batch ${targetBatch.batch_code})`);
+        } catch (err: any) {
+          setMasukError(err.message || "Gagal mencatat barang masuk.");
+        } finally {
+          setMasukLoading(false);
         }
-        targetBatch = newBatch;
       }
-
-      // Write entry to stock ledger
-      const ref = masukRef.trim() || `PO-MAKLON-${Date.now().toString().slice(-6)}`;
-      const ledgerEntry = await writeLedgerEntry(
-        masukProductId,
-        targetBatch.id,
-        qtyVal,
-        "masuk_maklon",
-        "system",
-        ref
-      );
-
-      if (!ledgerEntry) {
-        throw new Error("Gagal mencatat transaksi barang masuk di Buku Besar.");
-      }
-
-      setMasukProductId("");
-      setMasukBatchCode("");
-      setMasukExpiryDate("");
-      setMasukQty("");
-      setMasukRef("");
-      setMasukSuccess(`Penerimaan barang masuk dicatat! (+${qtyVal} pcs pada batch ${targetBatch.batch_code})`);
-    } catch (err: any) {
-      setMasukError(err.message || "Gagal mencatat barang masuk.");
-    } finally {
-      setMasukLoading(false);
-    }
+    });
   };
 
-  // 2. Handle Barang Keluar Manual Submit
+  // 2. Handle Barang Keluar Manual Submit (Friction confirmation first)
   const handleKeluarSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setKeluarError("");
@@ -164,45 +186,71 @@ export default function ManualPage() {
       return;
     }
 
-    setKeluarLoading(true);
     try {
       const currentStock = await getStockForProduct(keluarProductId);
       if (currentStock < qtyVal) {
         setKeluarError(`Stok tidak mencukupi. Stok saat ini: ${currentStock} pcs, diminta: ${qtyVal} pcs.`);
-        setKeluarLoading(false);
         return;
       }
 
-      // Run FEFO allocation
-      const allocations = await allocateBatchFefo(keluarProductId, qtyVal);
+      // Trigger confirmation screen
+      setConfirmData({
+        type: "keluar",
+        productName: products.find(p => p.id === keluarProductId)?.name || "Produk",
+        qty: qtyVal,
+        reason: getReasonLabel(keluarReason),
+        channel: "Manual",
+        dampak: `Stok fisik & aman dijual berkurang (-${qtyVal} unit)`,
+        action: async () => {
+          setKeluarLoading(true);
+          try {
+            // Run FEFO allocation
+            const allocations = await allocateBatchFefo(keluarProductId, qtyVal);
 
-      // Write ledger entries
-      const ref = keluarRef.trim() || `MAN-OUT-${Date.now().toString().slice(-6)}`;
-      await Promise.all(
-        allocations.map(async (alloc) => {
-          await writeLedgerEntry(
-            keluarProductId,
-            alloc.batchId,
-            -alloc.allocatedQty,
-            keluarReason,
-            "manual",
-            ref
-          );
-        })
-      );
+            // Write ledger entries
+            const ref = keluarRef.trim() || `MAN-OUT-${Date.now().toString().slice(-6)}`;
+            await Promise.all(
+              allocations.map(async (alloc) => {
+                await writeLedgerEntry(
+                  keluarProductId,
+                  alloc.batchId,
+                  -alloc.allocatedQty,
+                  keluarReason,
+                  "manual",
+                  ref
+                );
+              })
+            );
 
-      setKeluarProductId("");
-      setKeluarQty("");
-      setKeluarRef("");
-      setKeluarReason("bonus");
-      setKeluarStock(null);
+            setKeluarProductId("");
+            setKeluarQty("");
+            setKeluarRef("");
+            setKeluarReason("bonus");
+            setKeluarStock(null);
 
-      const splitInfo = allocations.map((a) => `batch ${a.batchCode} (-${a.allocatedQty} pcs)`).join(", ");
-      setKeluarSuccess(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs dialokasikan ke: ${splitInfo}.`);
+            const splitInfo = allocations.map((a) => `batch ${a.batchCode} (-${a.allocatedQty} pcs)`).join(", ");
+            setKeluarSuccess(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs dialokasikan ke: ${splitInfo}.`);
+          } catch (err: any) {
+            setKeluarError(err.message || "Gagal memotong stok.");
+          } finally {
+            setKeluarLoading(false);
+          }
+        }
+      });
     } catch (err: any) {
-      setKeluarError(err.message || "Gagal memotong stok.");
-    } finally {
-      setKeluarLoading(false);
+      setKeluarError("Gagal memeriksa ketersediaan stok.");
+    }
+  };
+
+  const getReasonLabel = (reason: string) => {
+    switch (reason) {
+      case "bonus": return "Bonus (Hadiah Pelanggan)";
+      case "promo": return "Promo Kampanye";
+      case "sampel": return "Sampel Review / R&D";
+      case "penjualan_offline": return "Penjualan Offline";
+      case "rusak": return "Barang Rusak / Cacat Fisik";
+      case "kedaluwarsa": return "Barang Kedaluwarsa";
+      default: return reason;
     }
   };
 
@@ -367,6 +415,60 @@ export default function ManualPage() {
           </form>
         </SectionCard>
       </div>
+
+      {/* Confirmation Modal Overlay (Intentional Friction) */}
+      {confirmData && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-primary max-w-md w-full rounded-md p-6 space-y-4 shadow-xl">
+            <h3 className="font-heading text-lg font-bold text-ink border-b border-border pb-2">
+              Konfirmasi Transaksi Permanen
+            </h3>
+            
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-ink-soft block uppercase tracking-wider font-semibold">Produk:</span>
+                <span className="text-sm font-bold text-ink">{confirmData.productName}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Jumlah (Qty):</span>
+                  <span className="text-sm font-bold text-primary font-mono">{confirmData.qty} unit</span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Alasan:</span>
+                  <span className="text-sm font-bold text-ink">{confirmData.reason}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Kanal:</span>
+                  <span className="text-sm font-bold text-ink">{confirmData.channel}</span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Dampak Stok:</span>
+                  <span className="text-sm font-bold text-success font-mono">{confirmData.dampak}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-danger-bg text-danger text-[11px] font-semibold rounded border border-danger/25">
+              ⚠️ Peringatan: Tindakan ini permanen dan akan langsung dicatat ke Buku Besar append-only. Catatan transaksi tidak dapat diubah atau dihapus setelah dikomit.
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="ghost" disabled={keluarLoading || masukLoading} onClick={() => setConfirmData(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" disabled={keluarLoading || masukLoading} onClick={async () => {
+                await confirmData.action();
+                setConfirmData(null);
+              }}>
+                {keluarLoading || masukLoading ? "Menyimpan..." : "Konfirmasi & Komit"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

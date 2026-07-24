@@ -102,10 +102,10 @@ export default function NotifikasiPage() {
     const claimList: typeof tiktokClaims = [];
     if (rets) {
       rets.forEach((r) => {
-        if (r.channel !== "tiktok" || r.status !== "PENDING" || !r.received_at) return;
+        if (r.channel !== "tiktok" || r.status !== "PENDING") return;
 
-        const recDate = new Date(r.received_at);
-        const elapsedDays = Math.floor((today.getTime() - recDate.getTime()) / (1000 * 60 * 60 * 24));
+        const createdDate = new Date(r.created_at);
+        const elapsedDays = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
         const remainingDays = 40 - elapsedDays;
 
         let status: "warning" | "danger" | "expired" = "warning";

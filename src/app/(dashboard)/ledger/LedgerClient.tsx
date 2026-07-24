@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { SectionCard, Tag, Input, Select, Button } from "@/components/ui";
 import { exportToXlsx, getReasonLabel, getChannelLabel, formatDate } from "@/lib/export";
+import { writeLedgerEntry } from "@/lib/ledger";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 
 interface LedgerClientProps {
@@ -14,7 +15,7 @@ interface LedgerClientProps {
 export function LedgerClient({ serverProducts, serverBatches, serverLedger }: LedgerClientProps) {
   const [products] = useState(serverProducts);
   const [batches] = useState(serverBatches);
-  const [ledgerEntries] = useState(serverLedger);
+  const [ledgerEntries, setLedgerEntries] = useState(serverLedger);
 
   // Top right selected product for the main detailed view
   const [selectedProduct, setSelectedProduct] = useState(products[0]?.id || "");
@@ -22,6 +23,9 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
   // Filters for the global bottom table "Seluruh Pergerakan"
   const [globalReason, setGlobalReason] = useState("");
   const [globalChannel, setGlobalChannel] = useState("");
+
+  // Reversal confirmation modal state
+  const [reversalData, setReversalData] = useState<any | null>(null);
 
   const getReasonLabel = (reason: string) => {
     switch (reason) {
@@ -38,6 +42,7 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
       case "retur_shopee": return "Retur Shopee";
       case "retur_tiktok": return "Retur TikTok";
       case "opname_koreksi": return "Koreksi Stok Opname";
+      case "koreksi_salah_input": return "Koreksi Salah Input";
       default: return reason;
     }
   };
@@ -93,6 +98,31 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
     if (globalChannel && e.channel !== globalChannel) return false;
     return true;
   });
+
+  const executeReversal = async () => {
+    if (!reversalData) return;
+    try {
+      const ref = `REVERSAL-${reversalData.reference_id || Date.now().toString().slice(-6)}`;
+      const result = await writeLedgerEntry(
+        reversalData.product_id,
+        reversalData.batch_id,
+        -reversalData.qty,
+        "koreksi_salah_input",
+        "system",
+        ref
+      );
+      if (result) {
+        alert("Koreksi entri salah input berhasil dicatat.");
+        setReversalData(null);
+        // Reload data/state
+        window.location.reload();
+      } else {
+        alert("Gagal mencatat koreksi salah input.");
+      }
+    } catch (err: any) {
+      alert("Gagal mencatat koreksi: " + err.message);
+    }
+  };
 
   const handleExportXlsx = async () => {
     const now = new Date();
@@ -215,12 +245,13 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
                       <th className="py-2.5 px-3">Referensi</th>
                       <th className="py-2.5 px-3 text-right">Qty</th>
                       <th className="py-2.5 px-3 text-right">Saldo Berjalan</th>
+                      <th className="py-2.5 px-3 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-dashed divide-border font-mono text-[11px]">
                     {displaySelectedEntries.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-ink-faint font-body text-xs">
+                        <td colSpan={8} className="py-8 text-center text-ink-faint font-body text-xs">
                           Belum ada transaksi tercatat untuk produk ini.
                         </td>
                       </tr>
@@ -231,7 +262,16 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
                         return (
                           <tr key={e.id} className="hover:bg-bg/20 transition-colors">
                             <td className="py-2.5 px-3 whitespace-nowrap text-ink-faint">{formatDate(e.created_at)}</td>
-                            <td className="py-2.5 px-3">{getReasonTag(e.reason)}</td>
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {getReasonTag(e.reason)}
+                                {e.is_verified === false && (
+                                  <Tag variant="warning" className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.25">
+                                    Belum Terverifikasi
+                                  </Tag>
+                                )}
+                              </div>
+                            </td>
                             <td className="py-2.5 px-3">{getChannelTag(e.channel)}</td>
                             <td className="py-2.5 px-3 text-primary-dark font-semibold">{batch?.batch_code || "-"}</td>
                             <td className="py-2.5 px-3 text-ink-soft truncate max-w-[120px]">{e.reference_id}</td>
@@ -240,6 +280,20 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
                             </td>
                             <td className="py-2.5 px-3 text-right font-bold text-ink-soft">
                               {e.runningBalance.toLocaleString("id-ID")}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {e.reason !== "koreksi_salah_input" && (
+                                <button
+                                  onClick={() => setReversalData(e)}
+                                  className="text-[10px] text-danger hover:underline font-semibold"
+                                  title="Reversal cepat untuk salah input"
+                                >
+                                  Koreksi
+                                </button>
+                              )}
+                              {e.reason === "koreksi_salah_input" && (
+                                <span className="text-[9px] text-ink-faint italic">Reversal</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -276,6 +330,7 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
                 { value: "retur_shopee", label: "Retur Shopee" },
                 { value: "retur_tiktok", label: "Retur TikTok" },
                 { value: "opname_koreksi", label: "Koreksi Stok Opname" },
+                { value: "koreksi_salah_input", label: "Koreksi Salah Input" },
               ]}
             />
           </div>
@@ -341,6 +396,59 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
           </table>
         </div>
       </SectionCard>
+
+      {/* Reversal Confirmation Modal (Salah Input Admin - Intentional Friction) */}
+      {reversalData && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-primary max-w-md w-full rounded-md p-6 space-y-4 shadow-xl">
+            <h3 className="font-heading text-lg font-bold text-ink border-b border-border pb-2">
+              Konfirmasi Reversal (Koreksi Salah Input)
+            </h3>
+            
+            <p className="text-xs text-ink-soft">
+              Anda akan melakukan penyesuaian untuk entri salah input berikut:
+            </p>
+
+            <div className="space-y-2 text-xs bg-bg/40 p-3 rounded border border-border">
+              <div>
+                <span className="text-ink-soft block uppercase tracking-wider font-semibold">Produk:</span>
+                <span className="text-sm font-bold text-ink">{products.find(p => p.id === reversalData.product_id)?.name}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Qty Awal:</span>
+                  <span className={`text-sm font-bold font-mono ${reversalData.qty > 0 ? "text-success" : "text-danger"}`}>
+                    {reversalData.qty > 0 ? `+${reversalData.qty}` : reversalData.qty} unit
+                  </span>
+                </div>
+                <div>
+                  <span className="text-ink-soft block uppercase tracking-wider font-semibold">Qty Penyeimbang (Reversal):</span>
+                  <span className={`text-sm font-bold font-mono ${-reversalData.qty > 0 ? "text-success" : "text-danger"}`}>
+                    {-reversalData.qty > 0 ? `+${-reversalData.qty}` : -reversalData.qty} unit
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span className="text-ink-soft block uppercase tracking-wider font-semibold">Referensi Asal:</span>
+                <span className="text-sm font-mono text-ink">{reversalData.reference_id}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-danger-bg text-danger text-[11px] font-semibold rounded border border-danger/25">
+              ⚠️ Peringatan: Tindakan ini permanen. Sistem akan menulis entri ledger baru dengan alasan <strong>Koreksi Salah Input</strong> untuk menyeimbangkan stok.
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="ghost" onClick={() => setReversalData(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" onClick={executeReversal}>
+                Konfirmasi &amp; Koreksi
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

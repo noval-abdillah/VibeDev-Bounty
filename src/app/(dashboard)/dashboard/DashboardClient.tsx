@@ -112,9 +112,9 @@ export function DashboardClient({
     // 1. TikTok and Shopee Returns
     serverReturns.forEach((r: any) => {
       if (r.condition === null) {
-        if (r.channel === "tiktok" && r.received_at) {
-          const recDate = new Date(r.received_at);
-          const elapsedDays = Math.floor((today.getTime() - recDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (r.channel === "tiktok") {
+          const createdDate = new Date(r.created_at);
+          const elapsedDays = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
           const remainingDays = 40 - elapsedDays;
           
           let severity: "danger" | "warning" | "success" = "success";
@@ -189,6 +189,7 @@ export function DashboardClient({
       case "retur_shopee": return "Retur Shopee";
       case "retur_tiktok": return "Retur TikTok";
       case "opname_koreksi": return "Koreksi Stok Opname";
+      case "koreksi_salah_input": return "Koreksi Salah Input";
       default: return reason;
     }
   };

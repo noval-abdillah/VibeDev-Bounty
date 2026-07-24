@@ -35,7 +35,8 @@ export type LedgerReason =
   | "pesanan_tiktok"
   | "retur_shopee"
   | "retur_tiktok"
-  | "opname_koreksi";
+  | "opname_koreksi"
+  | "koreksi_salah_input";
 
 export type LedgerChannel = "system" | "shopee" | "tiktok" | "manual";
 
@@ -48,6 +49,7 @@ export interface LedgerEntry {
   channel: LedgerChannel;
   reference_id: string; // Order Code, Opname ID, etc.
   created_at: string;
+  is_verified?: boolean;
 }
 
 export interface Bundle {
