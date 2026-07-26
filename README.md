@@ -47,26 +47,32 @@ Sistem ini dirancang khusus untuk mengatasi kebocoran dan selisih stok fisik vs 
 │                    MARKETPLACE (Shopee/TikTok)               │
 │                         (Simulasi / Webhook)                 │
 └──────────┬──────────────────────────────────────┬───────────┘
-           │ Order/Cancel/Retur                    │
+           │ Order/Cancel/Retur/Import             │
            ▼                                        ▼
 ┌──────────────────────┐              ┌────────────────────────┐
-│  /api/webhook/orders │              │  Form Manual (Client)  │
-│  (Server Route)      │              │  /masuk, /manual, dll  │
-│  ┌─────────────────┐ │              └───────────┬────────────┘
-│  │ process_fefo    │ │                          │
-│  │ process_cancel  │ │ RPC PostgreSQL            │ writeLedgerEntry()
-│  │ process_return  │ │ (Atomic Transaction)      │ (Client→Server)
-│  └─────────────────┘ │                          │
+│  /api/webhook/orders │              │  /api/ledger           │
+│  (Marketplace Events)│              │  (Admin Operations)    │
+│  ┌─────────────────┐ │              │  ┌──────────────────┐  │
+│  │ process_fefo    │ │              │  │ manual_stock_out │  │
+│  │ process_cancel  │ │              │  │ create_ledger    │  │
+│  │ process_return  │ │              │  │ complete_opname  │  │
+│  │ import_orders   │ │              │  └──────────────────┘  │
+│  └─────────────────┘ │              └───────────┬────────────┘
 └──────────┬───────────┘                          │
-           │ INSERT / SELECT                       │
+           │ RPC PostgreSQL (Atomic Transaction)   │
            ▼                                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    stock_ledger TABLE                         │
-│  (Append-only — TRIGGER blokir UPDATE/DELETE)                 │
-│  Index: product_id, batch_id, created_at                     │
+│  (Append-only — TRIGGER + REVOKE UPDATE/DELETE)              │
+│  Unique: (reference_id, product_id, batch_id) ← idempotency │
+│  CHECK: reason ∈ {enum}, channel ∈ {enum}                    │
+├─────────────────────────────────────────────────────────────┤
+│  product_stocks_cache   │ batch_stocks_cache                 │
+│  (Trigger-maintained    │ (Trigger-maintained                │
+│   O(1) running balance) │  O(1) running balance)             │
 ├─────────────────────────────────────────────────────────────┤
 │  product_stock_summary VIEW    │ batch_stock_summary VIEW    │
-│  (SUM(qty) per produk)         │ (SUM(qty) per batch)        │
+│  (JOIN cache, bukan SUM)       │ (JOIN cache, bukan SUM)     │
 ├─────────────────────────────────────────────────────────────┤
 │  daily_reconciliation_summary VIEW                            │
 │  (Order vs Ledger discrepancy detection)                     │
@@ -78,18 +84,23 @@ Sistem ini dirancang khusus untuk mengatasi kebocoran dan selisih stok fisik vs 
 ## ✨ 3. Fitur Utama
 
 - **Buku Besar Append-Only**: PostgreSQL Trigger `prevent_ledger_update_delete` memblokir UPDATE/DELETE. Setiap koreksi = baris baru.
+- **Immutability Berlapis**: Trigger + `REVOKE UPDATE, DELETE ON stock_ledger FROM authenticated` + RLS policy INSERT-only.
+- **Idempotency Event**: Unique index `(reference_id, product_id, batch_id)` + cek duplikat di setiap RPC mencegah double-processing.
 - **Alokasi Batch FEFO Otomatis**: Barang keluar dipotong dari batch dengan expired terdekat. Tidak ada pilihan batch manual untuk operator.
 - **Atomic FEFO dengan Row Locking**: RPC `process_order_fefo` menggunakan `SELECT FOR UPDATE` untuk mencegah race condition.
-- **Atomic Cancel Order**: RPC `process_cancel_order` membalikkan stok + update status order dalam satu transaksi.
-- **Retur Server-side**: RPC `process_return` memproses retur (layak jual/rusak/hilang) di server dengan atomic transaction.
-- **Pecah Resep Bundle**: SKU bundle diurai menjadi produk satuan × qty order, FEFO dijalankan per komponen.
+- **Atomic Cancel Order + Parsial**: RPC `process_cancel_order` membalikkan stok (penuh atau parsial per qty) + update status order dalam satu transaksi.
+- **Retur Server-side + Bundle Breakdown**: RPC `process_return` memproses retur per komponen bundle (menggunakan snapshot `resolved_components`), mendukung layak jual/rusak/hilang.
+- **Pecah Resep Bundle + Versioning**: SKU bundle diurai menjadi produk satuan × qty order, snapshot resep disimpan di `orders.resolved_components` JSONB saat dikirim — aman dari perubahan resep di masa depan.
+- **O(1) Stock Reads**: Cache table `product_stocks_cache` & `batch_stocks_cache` di-maintain via trigger on ledger insert — bukan SUM full-scan.
+- **Server-Side Ledger Writes**: Semua penulisan ledger lewat RPC/Server Action (`/api/ledger` untuk manual/opname, `/api/webhook/orders` untuk marketplace).
+- **DB-Level Constraint**: CHECK constraint `reason` dan `channel` di database — bukan hanya validasi TypeScript.
 - **2 Ritme Rekonsiliasi**: Harian (cek konsistensi ledger vs order) + Opname (banding fisik vs sistem).
 - **Drill-down Rekonsiliasi**: Klik item selisih → audit trail seluruh pergerakan produk dari Buku Besar.
-- **High Performance Database Views**: `product_stock_summary`, `batch_stock_summary`, `daily_reconciliation_summary` — menghilangkan N+1 query.
+- **Koreksi Entri Terpisah**: Tombol "Koreksi" reversal cepat (reason: `koreksi_salah_input`) terpisah dari "Penyesuaian Opname" (reason: `opname_koreksi`).
+- **Saldo Awal Terverifikasi**: Entri `saldo_awal` bertanda `is_verified = false` sampai opname pertama memverifikasi.
 - **Ekspor XLSX Premium**: Excel dengan header Rose Quartz Peach, auto-filter, multi-sheet, ringkasan.
 - **Mobile Responsive**: Sidebar drawer, touch targets 44px, horizontal scroll table.
-- **Manajemen Anggota**: 3 role (Gudang, Admin, Owner) + Owner dapat mendaftarkan user baru.
-- **Simulasi Marketplace**: Tombol simulasi + import CSV + arsitektur siap ganti API asli.
+- **Simulasi Marketplace**: Tombol simulasi + import CSV (lewat API route) + arsitektur siap ganti API asli.
 
 ---
 
@@ -153,10 +164,12 @@ erDiagram
         uuid product_id FK
         uuid batch_id FK
         integer qty
-        text reason
-        text channel
+        text reason "CHECK enum"
+        text channel "CHECK enum"
         text reference_id
+        boolean is_verified
         timestamp created_at
+        "UNIQUE(reference_id, product_id, batch_id)"
     }
 
     bundles {
@@ -171,6 +184,8 @@ erDiagram
         uuid bundle_id FK
         uuid product_id FK
         integer qty
+        integer version
+        boolean is_active
         timestamp created_at
     }
 
@@ -181,6 +196,7 @@ erDiagram
         text status
         text sku
         integer qty
+        jsonb resolved_components "snapshot resep bundle"
         timestamp created_at
     }
 
@@ -226,9 +242,14 @@ erDiagram
 
 ## 📁 7. Database Migrations (Urutan Eksekusi)
 
-Jalankan query SQL berikut di **SQL Editor Supabase**:
+Jalankan query SQL berikut di **SQL Editor Supabase**, secara berurutan:
 
-*   **`supabase/migrations/20260709000006_full_sql_editor.sql`** — Satu file terpadu yang berisi inisialisasi skema tabel, indeks optimasi performa, trigger append-only, views, RPC functions, serta data dummy awal produk & promo.
+1. **`supabase/migrations/20260709000006_full_sql_editor.sql`** — Skema tabel, trigger append-only, views, RPC functions, data dummy.
+2. **`supabase/migrations/20260709000007_phase2_updates.sql`** — Kolom `is_verified` pada ledger, update trigger agar izinkan update `is_verified`, retur rusak/hilang tanpa ledger write.
+3. **`supabase/migrations/20260709000008_fefo_resolved_cache.sql`** — Cache table `product_stocks_cache` & `batch_stocks_cache`, trigger sinkronisasi, rewrite views ke cache, kolom `resolved_components` pada orders, RPC `create_ledger_entry`.
+4. **`supabase/migrations/20260709000009_phase2_fixes.sql`** — Idempotency index, CHECK constraint reason/channel, REVOKE UPDATE/DELETE, bundle versioning, rewrite semua RPC (FEFO idempoten, cancel parsial, retur bundle components, manual ledger entry, opname corrections).
+
+> **Penting**: Jika sudah menjalankan migration 6, jalankan migration 7, 8, 9 secara berurutan. Jika mendapat error tipe data view, pastikan migration 8 menyertakan `DROP VIEW IF EXISTS ... CASCADE` di awal.
 
 ---
 
@@ -289,8 +310,9 @@ project/
 │   ├── app/
 │   │   ├── (dashboard)/         # Rute Halaman Dashboard (rekonsiliasi, produk, retur, promo, dll)
 │   │   ├── api/
-│   │   │   ├── webhook/orders/  # Route handler simulasi & promo otomatis
-│   │   │   ├── users/           # Manajemen anggota (Owner only)
+│   │   │   ├── webhook/orders/  # Route handler simulasi marketplace & promo otomatis
+│   │   │   ├── ledger/          # Route handler manual stock-out, opname, ledger entry (admin ops)
+│   │   │   ├── users/           # Manajemen anggota
 │   │   │   └── seed-users/      # Seeder akun tester
 │   │   └── login/               # Halaman login email+password & demo
 │   ├── components/
@@ -299,13 +321,15 @@ project/
 │   │   └── icons/               # Custom SVG icon set (12 icons including IconFlask)
 │   ├── lib/
 │   │   ├── supabase/            # client.ts, server.ts (Supabase helpers)
-│   │   ├── fefo.ts              # Algoritma FEFO (client-side, untuk form manual)
-│   │   ├── ledger.ts            # Helper read/write ledger
+│   │   ├── fefo.ts              # Algoritma FEFO (client-side preview, server-side execution)
+│   │   ├── ledger.ts            # Helper write ledger (via /api/ledger server route)
+│   │   ├── labels.ts            # Shared reason/channel labels (DRY, satu sumber)
 │   │   └── export.ts            # XLSX export utility dengan styling tema Rose Quartz
 │   ├── types/                   # TypeScript types (Product, Batch, LedgerEntry, dll)
 │   └── context/                 # UserContext (auth session + profile)
-└── supabase/
-    └── migrations/              # SQL migrations (6 file, urut sesuai nomor)
+├── supabase/
+│   └── migrations/              # SQL migrations (4 file utama, urut 6→7→8→9)
+└── vercel.json                  # Deployment config Vercel
 ```
 
 ---
@@ -314,46 +338,76 @@ project/
 
 ```
 Barang Masuk Maklon
-  → Form /masuk
-  → writeLedgerEntry(qty: +, reason: "masuk_maklon", channel: "system")
+  → Form /manual
+  → POST /api/ledger {action: "create_ledger_entry"}
+  → RPC create_manual_ledger_entry (idempoten)
   → Batch otomatis dibuat jika belum ada
 
 Order Marketplace (Simulasi)
   → Buat order (PENDING) — TIDAK menyentuh stock_ledger
   → Kirim (SHIPPED/IN_TRANSIT)
-  → RPC process_order_fefo (SELECT FOR UPDATE + INSERT)
-  → Bundle → pecah komponen → FEFO per komponen
+  → POST /api/webhook/orders {action: "update_order_status"}
+  → RPC process_order_fefo (SELECT FOR UPDATE + idempotency check)
+  → Bundle → pecah komponen → snapshot ke resolved_components → FEFO per komponen
   → Stok berkurang di batch expired terdekat
 
 Cancel Order (SHIPPED → CANCELLED)
-  → RPC process_cancel_order (atomic transaction)
+  → POST /api/webhook/orders {action: "update_order_status", new_status: "CANCELLED"}
+  → RPC process_cancel_order (penuh atau parsial via p_cancel_qty)
   → Reversal: INSERT +qty ke batch asal
-  → Update order status CANCELLED
+  → Idempotency: skip jika CANCEL-REFUND-{code} sudah ada
 
 Retur Masuk
   → Tombol "Retur" → simpan di returns table (PENDING)
   → Tab Inspeksi → pilih kondisi (Layak/Rusak/Hilang)
-  → RPC process_return (atomic transaction)
-  → Layak jual → restok batch asal
-  → Rusak → restok sementara + discard (2 entry ledger)
-  → Hilang → restok sementara + loss (2 entry ledger)
+  → POST /api/webhook/orders {action: "process_return"}
+  → RPC process_return (menerima resolved_components untuk bundle breakdown)
+  → Layak jual → batch baru (prefix RETUR-) + stok masuk
+  → Rusak/Hilang → TIDAK ada ledger write (stok sudah terpotong saat shipped)
 
 Barang Keluar Manual
   → Form /manual
   → Pilih alasan (bonus/promo/sampel/offline/rusak/expired)
-  → allocateBatchFefo() pilih batch expired terdekat
-  → writeLedgerEntry(qty: -, reason: [alasan], channel: "manual")
+  → POST /api/ledger {action: "manual_stock_out"}
+  → RPC process_order_fefo otomatis pilih batch FEFO
 
 Stok Opname
-  → Mulai sesi → draft (input fisik)
+  → Mulai sesi → draft (input fisik dari cache)
   → Simpan draft (berkali-kali, tidak sentuh ledger)
-  → Selesaikan → writeLedgerEntry(qty: diff, reason: "opname_koreksi")
-  → Setelah ledger aman → session ditandai completed
+  → Selesaikan → POST /api/ledger {action: "complete_opname"}
+  → RPC create_opname_corrections (atomic: ledger + verify saldo_awal + complete session)
+
+Koreksi Salah Input
+  → Tombol "Koreksi" di halaman Buku Besar
+  → POST /api/ledger {action: "create_ledger_entry"}
+  → Entri baru reason: "koreksi_salah_input" dengan qty terbalik
 ```
 
 ---
 
-## 🧪 12. Skenario Demo yang Disarankan
+## 🔧 12. Changelog Phase 2 (Sync Update)
+
+Perubahan utama dari Phase 1 ke Phase 2:
+
+| Area | Perubahan | File Terdampak |
+|------|-----------|----------------|
+| **Idempotency** | Unique index `(reference_id, product_id, batch_id)` + cek duplikat di semua RPC | `20260709000009_phase2_fixes.sql` |
+| **Server-Side Writes** | Semua client-side `stock_ledger` insert dihapus, dialihkan ke `/api/ledger` route yang memanggil RPC | `lib/ledger.ts`, `api/ledger/route.ts`, `manual/page.tsx`, `opname/page.tsx`, `ProdukClient.tsx` |
+| **API Separation** | Marketplace events (`/api/webhook/orders`) dipisah dari admin ops (`/api/ledger`) | `api/webhook/orders/route.ts`, `api/ledger/route.ts` |
+| **Bundle Versioning** | Snapshot resep bundle disimpan di `orders.resolved_components` JSONB saat dikirim | `api/webhook/orders/route.ts`, `20260709000009_phase2_fixes.sql` |
+| **Retur Bundle** | `process_return` RPC sekarang menerima `resolved_components` untuk breakdown per komponen | `api/webhook/orders/route.ts`, `20260709000009_phase2_fixes.sql` |
+| **Cancel Parsial** | `process_cancel_order` RPC mendukung `p_cancel_qty` untuk pembatalan sebagian | `20260709000009_phase2_fixes.sql` |
+| **O(1) Stock Cache** | Cache table `product_stocks_cache` & `batch_stocks_cache` + trigger sinkronisasi | `20260709000008_fefo_resolved_cache.sql` |
+| **DB Constraints** | CHECK constraint `reason` dan `channel` di database level | `20260709000009_phase2_fixes.sql` |
+| **REVOKE** | `REVOKE UPDATE, DELETE ON stock_ledger FROM authenticated` | `20260709000009_phase2_fixes.sql` |
+| **DRY Labels** | `getReasonLabel` & `getChannelLabel` dipindah ke `lib/labels.ts` (satu sumber) | `lib/labels.ts`, semua komponen client |
+| **Single Role Admin** | Semua user = Admin penuh, tidak ada restriksi menu/role | `Sidebar.tsx`, semua page (isReadOnly=false) |
+| **Saldo Awal Verified** | Kolom `is_verified` pada ledger, saldo_awal unverified sampai opname | `20260709000007_phase2_updates.sql` |
+| **Cleanup** | Hapus folder kosong `components/features/`, placeholder URL, tambah `vercel.json` | `client.ts`, `vercel.json` |
+
+---
+
+## 🧪 13. Skenario Demo yang Disarankan
 
 **Total ~15 menit:**
 
@@ -368,13 +422,13 @@ Stok Opname
 
 ---
 
-## 📜 13. Lisensi
+## 📜 14. Lisensi
 
 Proyek ini berada di bawah lisensi **MIT** — bebas digunakan, dimodifikasi, dan didistribusikan.
 
 ---
 
-## 📬 14. Kontak
+## 📬 15. Kontak
 
 - **Maintainer**: Tim Pengembang VibeDev
 - **Issue / Feedback**: Laporkan di [GitHub Issues](https://github.com/anomalyco/opencode/issues)
