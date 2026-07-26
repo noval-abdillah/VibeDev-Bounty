@@ -4,8 +4,8 @@ import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { SectionCard, Tag, Select, Button } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
-import { getStockForProductAndBatch } from "@/lib/ledger";
-import { exportToXlsx, getReasonLabel, formatDate } from "@/lib/export";
+import { exportToXlsx, formatDate } from "@/lib/export";
+import { getReasonLabel } from "@/lib/labels";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Batch, OpnameSession, OpnameItem, LedgerEntry, Order } from "@/types";
 import { IconFlask } from "@/components/icons/IconFlask";
@@ -193,26 +193,6 @@ function RekonsiliasiContent() {
         setExpandedItem(itemKey);
         setExpandedLedger(filteredHistory);
       }
-    }
-  };
-
-  const getReasonLabel = (reason: string) => {
-    switch (reason) {
-      case "saldo_awal": return "Saldo Awal Produk";
-      case "masuk_maklon": return "Barang Masuk Maklon";
-      case "penjualan_offline": return "Penjualan Offline";
-      case "bonus": return "Keluar Bonus";
-      case "promo": return "Keluar Promo";
-      case "sampel": return "Keluar Sampel";
-      case "rusak": return "Barang Rusak";
-      case "kedaluwarsa": return "Kedaluwarsa";
-      case "pesanan_shopee": return "Pesanan Shopee";
-      case "pesanan_tiktok": return "Pesanan TikTok";
-      case "retur_shopee": return "Retur Shopee";
-      case "retur_tiktok": return "Retur TikTok";
-      case "opname_koreksi": return "Koreksi Stok Opname";
-      case "koreksi_salah_input": return "Koreksi Salah Input";
-      default: return reason;
     }
   };
 

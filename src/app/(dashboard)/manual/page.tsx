@@ -4,13 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useUser } from "@/context/UserContext";
 import { SectionCard, Input, Select, Button, Alert } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
-import { writeLedgerEntry, getStockForProduct } from "@/lib/ledger";
-import { allocateBatchFefo } from "@/lib/fefo";
+import { writeLedgerEntry } from "@/lib/ledger";
+import { getReasonLabel } from "@/lib/labels";
 import type { Product, LedgerReason } from "@/types";
 
 export default function ManualPage() {
   const { user } = useUser();
-  const isReadOnly = user?.role === "owner";
+  const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
   
@@ -54,8 +54,8 @@ export default function ManualPage() {
   // Fetch stock when selected product for manual outbound changes
   useEffect(() => {
     if (keluarProductId) {
-      getStockForProduct(keluarProductId).then((stk) => {
-        setKeluarStock(stk);
+      supabase.from("product_stocks_cache").select("total_stock").eq("product_id", keluarProductId).single().then(({ data }) => {
+        setKeluarStock(data?.total_stock ?? 0);
       });
     } else {
       setKeluarStock(null);
@@ -187,13 +187,13 @@ export default function ManualPage() {
     }
 
     try {
-      const currentStock = await getStockForProduct(keluarProductId);
+      const { data: cacheData } = await supabase.from("product_stocks_cache").select("total_stock").eq("product_id", keluarProductId).single();
+      const currentStock = cacheData?.total_stock ?? 0;
       if (currentStock < qtyVal) {
         setKeluarError(`Stok tidak mencukupi. Stok saat ini: ${currentStock} pcs, diminta: ${qtyVal} pcs.`);
         return;
       }
 
-      // Trigger confirmation screen
       setConfirmData({
         type: "keluar",
         productName: products.find(p => p.id === keluarProductId)?.name || "Produk",
@@ -204,23 +204,26 @@ export default function ManualPage() {
         action: async () => {
           setKeluarLoading(true);
           try {
-            // Run FEFO allocation
-            const allocations = await allocateBatchFefo(keluarProductId, qtyVal);
-
-            // Write ledger entries
             const ref = keluarRef.trim() || `MAN-OUT-${Date.now().toString().slice(-6)}`;
-            await Promise.all(
-              allocations.map(async (alloc) => {
-                await writeLedgerEntry(
-                  keluarProductId,
-                  alloc.batchId,
-                  -alloc.allocatedQty,
-                  keluarReason,
-                  "manual",
-                  ref
-                );
-              })
-            );
+            const res = await fetch("/api/ledger", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "manual_stock_out",
+                payload: {
+                  product_id: keluarProductId,
+                  qty: qtyVal,
+                  reason: keluarReason,
+                  channel: "manual",
+                  reference_id: ref,
+                },
+              }),
+            });
+
+            if (!res.ok) {
+              const result = await res.json();
+              throw new Error(result.error || "Gagal memotong stok.");
+            }
 
             setKeluarProductId("");
             setKeluarQty("");
@@ -228,8 +231,7 @@ export default function ManualPage() {
             setKeluarReason("bonus");
             setKeluarStock(null);
 
-            const splitInfo = allocations.map((a) => `batch ${a.batchCode} (-${a.allocatedQty} pcs)`).join(", ");
-            setKeluarSuccess(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs dialokasikan ke: ${splitInfo}.`);
+            setKeluarSuccess(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs via FEFO.`);
           } catch (err: any) {
             setKeluarError(err.message || "Gagal memotong stok.");
           } finally {

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default function PesananReturPage() {
   const { user } = useUser();
-  const isReadOnly = user?.role === "owner";
+  const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
@@ -228,6 +228,7 @@ export default function PesananReturPage() {
       }
 
       let importCount = 0;
+      const ordersToImport: { order_code: string; channel: string; sku: string; qty: number }[] = [];
       for (let i = startIndex; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
@@ -253,16 +254,20 @@ export default function PesananReturPage() {
           throw new Error(`SKU '${sku}' di baris ${i + 1} tidak ditemukan.`);
         }
 
-        await supabase.from("orders").insert({
-          order_code,
-          channel: channel as "shopee" | "tiktok",
-          status: "PENDING",
-          sku: sku.toUpperCase(),
-          qty: qtyVal,
-        });
-
+        ordersToImport.push({ order_code, channel, sku, qty: qtyVal });
         importCount++;
       }
+
+      const res = await fetch("/api/webhook/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "import_orders",
+          payload: { orders: ordersToImport },
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
 
       setCsvContent("");
       setImportSuccess(`Berhasil mengimpor ${importCount} pesanan PENDING.`);

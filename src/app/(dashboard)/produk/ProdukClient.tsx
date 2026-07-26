@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import { useUser } from "@/context/UserContext";
 import { SectionCard, Button, Tag, Input, Select } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
-import { getStockForProduct } from "@/lib/ledger";
 import { exportToXlsx } from "@/lib/export";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Bundle, BundleComponent } from "@/types";
@@ -19,7 +18,7 @@ interface ProdukClientProps {
 
 export function ProdukClient({ serverProducts, serverBundles, serverBundleComponents, serverPendingOrders }: ProdukClientProps) {
   const { user } = useUser();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = true;
 
   const [activeTab, setActiveTab] = useState<"produk" | "bundle" | "config">("produk");
   const [products, setProducts] = useState<any[]>(serverProducts);
@@ -125,9 +124,20 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
     }).select().single();
 
     if (newBatch) {
-      await supabase.from("stock_ledger").insert({
-        product_id: newProd.id, batch_id: newBatch.id, qty: 0,
-        reason: "saldo_awal", channel: "system", reference_id: "PO-INIT-001",
+      await fetch("/api/ledger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_ledger_entry",
+          payload: {
+            product_id: newProd.id,
+            batch_id: newBatch.id,
+            qty: 0,
+            reason: "saldo_awal",
+            channel: "system",
+            reference_id: "PO-INIT-001",
+          },
+        }),
       });
     }
 

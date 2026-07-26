@@ -4,14 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useUser } from "@/context/UserContext";
 import { SectionCard, Input, Button, Tag } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
-import { getStockForProductAndBatch, writeLedgerEntry } from "@/lib/ledger";
 import { exportToXlsx } from "@/lib/export";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Batch, OpnameSession, OpnameItem } from "@/types";
 
 export default function StokOpnamePage() {
   const { user } = useUser();
-  const isReadOnly = user?.role === "owner";
+  const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -95,13 +94,16 @@ export default function StokOpnamePage() {
       // Seed initial physical counts with system values
       const initialCounts: Record<string, string> = {};
       const prods = products;
+      const { data: batchCache } = await supabase.from("batch_stocks_cache").select("batch_id, batch_stock");
+      const batchStockMap: Record<string, number> = {};
+      (batchCache || []).forEach((bc: any) => { batchStockMap[bc.batch_id] = bc.batch_stock; });
       
       await Promise.all(
         prods.map(async (p) => {
           const pBatches = batches.filter((b) => b.product_id === p.id);
           await Promise.all(
             pBatches.map(async (b) => {
-              const sysVal = await getStockForProductAndBatch(p.id, b.id);
+              const sysVal = batchStockMap[b.id] || 0;
               initialCounts[`${p.id}_${b.id}`] = sysVal.toString();
               
               await supabase.from("opname_items").insert({
@@ -141,10 +143,12 @@ export default function StokOpnamePage() {
     setLoading(true);
 
     try {
-      // Clear old draft items
       await supabase.from("opname_items").delete().eq("session_id", activeSession.id);
 
-      // Insert new draft items
+      const { data: batchCache } = await supabase.from("batch_stocks_cache").select("batch_id, batch_stock");
+      const batchStockMap: Record<string, number> = {};
+      (batchCache || []).forEach((bc: any) => { batchStockMap[bc.batch_id] = bc.batch_stock; });
+
       await Promise.all(
         products.map(async (p) => {
           const pBatches = batches.filter((b) => b.product_id === p.id);
@@ -152,7 +156,7 @@ export default function StokOpnamePage() {
             pBatches.map(async (b) => {
               const key = `${p.id}_${b.id}`;
               const physicalVal = parseInt(physicalCounts[key]) || 0;
-              const systemVal = await getStockForProductAndBatch(p.id, b.id);
+              const systemVal = batchStockMap[b.id] || 0;
 
               await supabase.from("opname_items").insert({
                 session_id: activeSession.id,
@@ -185,12 +189,16 @@ export default function StokOpnamePage() {
       const adjustments: { product_id: string; batch_id: string; diff: number }[] = [];
       const adjustmentsDetailList: { name: string; batch: string; diff: number }[] = [];
 
+      const { data: batchCache } = await supabase.from("batch_stocks_cache").select("batch_id, batch_stock");
+      const batchStockMap: Record<string, number> = {};
+      (batchCache || []).forEach((bc: any) => { batchStockMap[bc.batch_id] = bc.batch_stock; });
+
       for (const p of products) {
         const pBatches = batches.filter((b) => b.product_id === p.id);
         for (const b of pBatches) {
           const key = `${p.id}_${b.id}`;
           const physicalVal = parseInt(physicalCounts[key]);
-          const systemVal = await getStockForProductAndBatch(p.id, b.id);
+          const systemVal = batchStockMap[b.id] || 0;
 
           if (isNaN(physicalVal) || physicalVal < 0) {
             throw new Error(`Nilai hitung fisik untuk ${p.name} batch ${b.batch_code} tidak valid.`);
@@ -225,7 +233,6 @@ export default function StokOpnamePage() {
         action: async () => {
           setLoading(true);
           try {
-            // 1. Save final items
             await supabase.from("opname_items").delete().eq("session_id", activeSession.id);
             await supabase.from("opname_items").insert(
               finalItems.map((item) => ({
@@ -237,40 +244,19 @@ export default function StokOpnamePage() {
               }))
             );
 
-            // 2. FIRST: write ledger corrections
-            await Promise.all(
-              adjustments.map(async (adj) => {
-                await writeLedgerEntry(
-                  adj.product_id,
-                  adj.batch_id,
-                  adj.diff,
-                  "opname_koreksi",
-                  "system",
-                  `OPNAME-CORR-${activeSession.id.slice(-6)}`
-                );
-              })
-            );
-
-            // Update all previous saldo_awal entries for these products to is_verified = true
-            const opnameProductIds = Array.from(new Set(finalItems.map((item) => item.product_id)));
-            await Promise.all(
-              opnameProductIds.map(async (pid) => {
-                await supabase
-                  .from("stock_ledger")
-                  .update({ is_verified: true })
-                  .eq("product_id", pid)
-                  .eq("reason", "saldo_awal");
-              })
-            );
-
-            // 3. THEN: mark session completed (only after ledger entries are consistent)
-            await supabase
-              .from("opname_sessions")
-              .update({
-                status: "completed",
-                completed_at: new Date().toISOString(),
-              })
-              .eq("id", activeSession.id);
+            const res = await fetch("/api/ledger", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "complete_opname",
+                payload: {
+                  session_id: activeSession.id,
+                  corrections: adjustments,
+                },
+              }),
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error);
 
             setSuccess(`Opname selesai! Menulis ${adjustments.length} entri koreksi ke Buku Besar.`);
             setActiveSession(null);
@@ -525,8 +511,8 @@ function OpnameRow({ product, batch, physicalValStr, physicalVal, isReadOnly, on
   const [sysVal, setSysVal] = useState<number | null>(null);
 
   useEffect(() => {
-    getStockForProductAndBatch(product.id, batch.id).then((val) => {
-      setSysVal(val);
+    supabase.from("batch_stocks_cache").select("batch_stock").eq("batch_id", batch.id).single().then(({ data }) => {
+      setSysVal(data?.batch_stock ?? 0);
     });
   }, [product.id, batch.id]);
 

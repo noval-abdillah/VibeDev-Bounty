@@ -26,13 +26,13 @@ export function Sidebar({ onClose }: SidebarProps) {
     { href: "/dashboard", label: "Dashboard", icon: IconDashboard },
     { href: "/produk", label: "Produk & Batch", icon: IconVial },
     { href: "/ledger", label: "Buku Besar", icon: IconLedger },
-    { href: "/manual", label: "Input Manual", icon: IconEdit, role: ["gudang", "admin"] },
-    { href: "/pesanan", label: "Pesanan Marketplace", icon: IconBag, role: ["gudang", "admin"] },
-    { href: "/retur", label: "Inspeksi Retur", icon: IconTruck, role: ["gudang", "admin"] },
-    { href: "/opname", label: "Stok Opname", icon: IconCheckClipboard, role: ["gudang", "admin"] },
+    { href: "/manual", label: "Input Manual", icon: IconEdit },
+    { href: "/pesanan", label: "Pesanan Marketplace", icon: IconBag },
+    { href: "/retur", label: "Inspeksi Retur", icon: IconTruck },
+    { href: "/opname", label: "Stok Opname", icon: IconCheckClipboard },
     { href: "/rekonsiliasi", label: "Rekonsiliasi", icon: IconScale },
-    { href: "/promo", label: "Aturan Promo", icon: IconBoxes, role: ["admin"] },
-    { href: "/anggota", label: "Kelola Anggota", icon: IconEdit, role: ["owner"] },
+    { href: "/promo", label: "Aturan Promo", icon: IconBoxes },
+    { href: "/anggota", label: "Kelola Anggota", icon: IconEdit },
     { href: "/notifikasi", label: "Notifikasi", icon: IconBell },
   ];
 
@@ -61,17 +61,12 @@ export function Sidebar({ onClose }: SidebarProps) {
         {/* User Info */}
         <div className="px-6 py-4 border-b border-sidebar-soft/10 bg-black/10">
           <div className="font-heading text-xs font-semibold text-white truncate">{user.name}</div>
-          <div className="text-[10px] text-sidebar-soft/80 capitalize font-mono mt-0.5">{user.role === "gudang" ? "Gudang (Operator)" : user.role === "owner" ? "Owner (Read-Only)" : "Admin"}</div>
+          <div className="text-[10px] text-sidebar-soft/80 capitalize font-mono mt-0.5">Admin</div>
         </div>
 
         {/* Navigation */}
         <nav className="p-4 space-y-1">
           {menuItems.map((item) => {
-            // Check roles
-            if (item.role && !item.role.includes(user.role)) {
-              return null;
-            }
-
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
             const Icon = item.icon;
 

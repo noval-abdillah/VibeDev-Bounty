@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { SectionCard, Tag, Button } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
-import { getStockForProductAndBatch, getStockForProduct } from "@/lib/ledger";
+import { getReasonLabel } from "@/lib/labels";
 import type { Product, Batch, LedgerEntry } from "@/types";
 
 export default function ProductDetailPage() {
@@ -84,26 +84,6 @@ export default function ProductDetailPage() {
       }
     });
     setReservation(resQty);
-  };
-
-  const getReasonLabel = (reason: string) => {
-    switch (reason) {
-      case "saldo_awal": return "Saldo Awal Produk";
-      case "masuk_maklon": return "Barang Masuk Maklon";
-      case "penjualan_offline": return "Penjualan Offline";
-      case "bonus": return "Keluar Bonus";
-      case "promo": return "Keluar Promo";
-      case "sampel": return "Keluar Sampel";
-      case "rusak": return "Barang Rusak";
-      case "kedaluwarsa": return "Kedaluwarsa";
-      case "pesanan_shopee": return "Pesanan Shopee";
-      case "pesanan_tiktok": return "Pesanan TikTok";
-      case "retur_shopee": return "Retur Shopee";
-      case "retur_tiktok": return "Retur TikTok";
-      case "opname_koreksi": return "Koreksi Stok Opname";
-      case "koreksi_salah_input": return "Koreksi Salah Input";
-      default: return reason;
-    }
   };
 
   const getChannelTag = (channel: string) => {

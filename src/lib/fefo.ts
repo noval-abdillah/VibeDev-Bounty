@@ -1,5 +1,4 @@
 import { supabase } from "./supabase/client";
-import { getStockForProductAndBatch } from "./ledger";
 
 interface AllocatedBatch {
   batchId: string;
@@ -27,13 +26,21 @@ export async function allocateBatchFefo(productId: string, qty: number): Promise
     throw new Error(`Produk tidak memiliki batch terdaftar.`);
   }
 
-  // 2. Compute current stock for each batch and filter for positive stock
-  const batchStocks = await Promise.all(
-    batches.map(async (batch) => {
-      const stock = await getStockForProductAndBatch(productId, batch.id);
-      return { batch, stock };
-    })
-  );
+  // 2. Compute current stock for each batch and filter for positive stock using cache table
+  const { data: cacheData } = await supabase
+    .from("batch_stocks_cache")
+    .select("batch_id, batch_stock")
+    .in("batch_id", batches.map(b => b.id));
+
+  const stockMap: Record<string, number> = {};
+  (cacheData || []).forEach(c => {
+    stockMap[c.batch_id] = c.batch_stock;
+  });
+
+  const batchStocks = batches.map((batch) => {
+    const stock = stockMap[batch.id] || 0;
+    return { batch, stock };
+  });
 
   // 3. Sort by expiration date ascending (earliest expiry first)
   const eligibleBatches = batchStocks

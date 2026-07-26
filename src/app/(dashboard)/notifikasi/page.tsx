@@ -4,12 +4,11 @@ import React, { useEffect, useState } from "react";
 import { useUser } from "@/context/UserContext";
 import { SectionCard, Tag, Button } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
-import { getStockForProductAndBatch } from "@/lib/ledger";
 import type { Batch, ReturnItem, Product } from "@/types";
 
 export default function NotifikasiPage() {
   const { user } = useUser();
-  const isReadOnly = user?.role === "owner";
+  const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);

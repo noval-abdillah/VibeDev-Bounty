@@ -140,34 +140,7 @@ export async function exportToXlsx(options: ExportOptions) {
   URL.revokeObjectURL(url);
 }
 
-export function getReasonLabel(reason: string): string {
-  const map: Record<string, string> = {
-    saldo_awal: "Saldo Awal Produk",
-    masuk_maklon: "Barang Masuk Maklon",
-    penjualan_offline: "Penjualan Offline",
-    bonus: "Keluar Bonus",
-    promo: "Keluar Promo",
-    sampel: "Keluar Sampel",
-    rusak: "Barang Rusak",
-    kedaluwarsa: "Barang Kedaluwarsa",
-    pesanan_shopee: "Pesanan Shopee",
-    pesanan_tiktok: "Pesanan TikTok",
-    retur_shopee: "Retur Shopee",
-    retur_tiktok: "Retur TikTok",
-    opname_koreksi: "Koreksi Stok Opname",
-  };
-  return map[reason] || reason;
-}
-
-export function getChannelLabel(channel: string): string {
-  const map: Record<string, string> = {
-    shopee: "Shopee",
-    tiktok: "TikTok Shop",
-    manual: "Input Manual",
-    system: "System",
-  };
-  return map[channel] || channel;
-}
+export { getReasonLabel, getChannelLabel } from "./labels";
 
 export function formatDate(iso: string): string {
   if (!iso) return "-";

@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { SectionCard, Tag, Input, Select, Button } from "@/components/ui";
-import { exportToXlsx, getReasonLabel, getChannelLabel, formatDate } from "@/lib/export";
+import { exportToXlsx, formatDate } from "@/lib/export";
+import { getReasonLabel, getChannelLabel } from "@/lib/labels";
 import { writeLedgerEntry } from "@/lib/ledger";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 
@@ -26,26 +27,6 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
 
   // Reversal confirmation modal state
   const [reversalData, setReversalData] = useState<any | null>(null);
-
-  const getReasonLabel = (reason: string) => {
-    switch (reason) {
-      case "saldo_awal": return "Saldo Awal Produk";
-      case "masuk_maklon": return "Barang Masuk Maklon";
-      case "penjualan_offline": return "Penjualan Offline";
-      case "bonus": return "Keluar Bonus";
-      case "promo": return "Keluar Promo";
-      case "sampel": return "Keluar Sampel";
-      case "rusak": return "Barang Rusak";
-      case "kedaluwarsa": return "Kedaluwarsa";
-      case "pesanan_shopee": return "Pesanan Shopee";
-      case "pesanan_tiktok": return "Pesanan TikTok";
-      case "retur_shopee": return "Retur Shopee";
-      case "retur_tiktok": return "Retur TikTok";
-      case "opname_koreksi": return "Koreksi Stok Opname";
-      case "koreksi_salah_input": return "Koreksi Salah Input";
-      default: return reason;
-    }
-  };
 
   const getReasonTag = (reason: string) => {
     switch (reason) {
