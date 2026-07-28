@@ -34,7 +34,6 @@ export function Sidebar({ onClose }: SidebarProps) {
     { href: "/opname", label: "Stok Opname", icon: IconCheckClipboard },
     { href: "/rekonsiliasi", label: "Rekonsiliasi", icon: IconScale },
     { href: "/promo", label: "Aturan Promo", icon: IconBoxes },
-    { href: "/anggota", label: "Kelola Anggota", icon: IconEdit },
     { href: "/notifikasi", label: "Notifikasi", icon: IconBell },
   ];
 

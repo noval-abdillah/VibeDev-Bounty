@@ -33,8 +33,6 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         return { title: "Stok Opname Gudang", desc: "Hitung fisik vs catatan sistem" };
       case "rekonsiliasi":
         return { title: "Rekonsiliasi & Drill-Down", desc: "Selisih dan jejak pergerakan pembentuknya" };
-      case "anggota":
-        return { title: "Kelola Anggota", desc: "Manajemen anggota tim dan hak akses mereka" };
       case "notifikasi":
         return { title: "Notifikasi", desc: "Peringatan kedaluwarsa & klaim retur mendekati batas" };
       default:
