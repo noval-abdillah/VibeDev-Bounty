@@ -7,6 +7,8 @@ import { getReasonLabel } from "@/lib/labels";
 import type { LedgerEntry, Product, Batch } from "@/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { AlertCircle, Calendar, ClipboardCheck, Layers, ArrowUpRight, TrendingUp } from "lucide-react";
 
 interface DashboardClientProps {
   serverProducts: any[];
@@ -184,95 +186,152 @@ export function DashboardClient({
     }
   };
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.05
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } as any }
+  };
+
   return (
     <div className="space-y-6">
       {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <SectionCard className="flex flex-col justify-between">
-          <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Total SKU Aktif</span>
-            <div className="text-2xl font-bold font-mono text-ink mt-1">{totalProducts}</div>
-          </div>
-          <div className="text-[11px] text-ink-faint mt-4">Katalog produk aktif</div>
-        </SectionCard>
-
-        <SectionCard className="flex flex-col justify-between">
-          <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Batch Mendekati Exp.</span>
-            <div className="text-2xl font-bold font-mono text-warning mt-1">{expiryWarningsCount}</div>
-          </div>
-          <div className="text-[11px] text-ink-faint mt-4">Expired &le; 30 hari &amp; stok &gt; 0</div>
-        </SectionCard>
-
-        <SectionCard className="flex flex-col justify-between">
-          <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Retur Menunggu Inspeksi</span>
-            <div className="text-2xl font-bold font-mono text-primary mt-1">
-              {returnsMenungguInspeksiCount}
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="grid grid-cols-1 md:grid-cols-4 gap-4"
+      >
+        <motion.div variants={itemVariants}>
+          <SectionCard className="flex flex-col justify-between h-full hover:translate-y-[-2px] hover:shadow-md transition-all duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs text-ink-soft font-semibold uppercase tracking-wider">Total SKU Aktif</span>
+                <div className="text-3xl font-extrabold font-mono text-ink mt-2">{totalProducts}</div>
+              </div>
+              <div className="p-2 bg-primary/10 rounded-sm text-primary">
+                <Layers className="w-5 h-5" />
+              </div>
             </div>
-          </div>
-          <div className="text-[11px] text-ink-faint mt-4">Retur yang belum diperiksa</div>
-        </SectionCard>
+            <div className="text-[11px] text-ink-faint mt-4 border-t border-border/40 pt-2 font-mono">Katalog produk aktif</div>
+          </SectionCard>
+        </motion.div>
 
-        <SectionCard className="flex flex-col justify-between">
-          <div>
-            <span className="text-xs text-ink-soft font-semibold uppercase">Anomali Terbuka</span>
-            <div className="text-2xl font-bold font-mono text-danger mt-1">{worklist.length}</div>
-          </div>
-          <div className="text-[11px] text-ink-faint mt-4">Total anomali &amp; task kritis</div>
-        </SectionCard>
-      </div>
+        <motion.div variants={itemVariants}>
+          <SectionCard className="flex flex-col justify-between h-full hover:translate-y-[-2px] hover:shadow-md transition-all duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs text-ink-soft font-semibold uppercase tracking-wider">Batch Mendekati Exp.</span>
+                <div className="text-3xl font-extrabold font-mono text-warning mt-2">{expiryWarningsCount}</div>
+              </div>
+              <div className="p-2 bg-warning/10 rounded-sm text-warning">
+                <Calendar className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-[11px] text-ink-faint mt-4 border-t border-border/40 pt-2 font-mono">Expired &le; 30 hari &amp; stok &gt; 0</div>
+          </SectionCard>
+        </motion.div>
+
+        <motion.div variants={itemVariants}>
+          <SectionCard className="flex flex-col justify-between h-full hover:translate-y-[-2px] hover:shadow-md transition-all duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs text-ink-soft font-semibold uppercase tracking-wider">Retur Menunggu Inspeksi</span>
+                <div className="text-3xl font-extrabold font-mono text-primary mt-2">
+                  {returnsMenungguInspeksiCount}
+                </div>
+              </div>
+              <div className="p-2 bg-primary/10 rounded-sm text-primary">
+                <ClipboardCheck className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-[11px] text-ink-faint mt-4 border-t border-border/40 pt-2 font-mono">Retur yang belum diperiksa</div>
+          </SectionCard>
+        </motion.div>
+
+        <motion.div variants={itemVariants}>
+          <SectionCard className="flex flex-col justify-between h-full hover:translate-y-[-2px] hover:shadow-md transition-all duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs text-ink-soft font-semibold uppercase tracking-wider">Anomali Terbuka</span>
+                <div className="text-3xl font-extrabold font-mono text-danger mt-2">{worklist.length}</div>
+              </div>
+              <div className="p-2 bg-danger/10 rounded-sm text-danger animate-pulse-slow">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-[11px] text-ink-faint mt-4 border-t border-border/40 pt-2 font-mono">Total anomali &amp; task kritis</div>
+          </SectionCard>
+        </motion.div>
+      </motion.div>
 
       {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Worklist Anomali Harian */}
         <div className="lg:col-span-2 space-y-4">
           <SectionCard title="Tugas Hari Ini (Worklist Anomali Harian)">
-            <div className="divide-y divide-border text-xs">
+            <motion.div 
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+              className="divide-y divide-border/60 text-xs"
+            >
               {worklist.length === 0 ? (
-                <div className="p-8 text-center text-ink-faint font-mono">
+                <div className="p-12 text-center text-ink-faint font-mono bg-bg/25 rounded-md border border-dashed border-border/60">
                   Semua aman! Tidak ada anomali atau tugas mendesak hari ini.
                 </div>
               ) : (
                 worklist.map((item) => (
-                  <div key={item.id} className="py-3 flex justify-between items-center hover:bg-bg/10 transition-colors px-1">
+                  <motion.div 
+                    variants={itemVariants}
+                    key={item.id} 
+                    className="py-4.5 flex justify-between items-center hover:bg-bg/20 transition-all duration-200 px-2 rounded-sm"
+                  >
                     <div className="flex items-start gap-3 min-w-0">
                       {/* Status Dot */}
-                      <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
-                        item.severity === "danger" ? "bg-danger" : item.severity === "warning" ? "bg-warning" : "bg-success"
+                      <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 shadow-sm ${
+                        item.severity === "danger" ? "bg-danger animate-pulse-slow" : item.severity === "warning" ? "bg-warning" : "bg-success"
                       }`} />
                       <div className="min-w-0">
-                        <div className="font-semibold text-ink flex items-center gap-2 flex-wrap">
+                        <div className="font-bold text-ink flex items-center gap-2 flex-wrap">
                           <span>{item.title}</span>
                           {item.severity === "danger" && (
-                            <span className="px-1.5 py-0.5 rounded bg-danger-bg text-danger text-[9px] font-bold uppercase tracking-wider font-mono">
+                            <span className="px-2 py-0.5 rounded-full bg-danger-bg text-danger text-[8px] font-extrabold uppercase tracking-wider font-mono border border-danger/10">
                               kritis
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-ink-soft mt-0.5 font-mono">{item.subtitle}</p>
+                        <p className="text-[11px] text-ink-soft mt-1 font-mono leading-relaxed">{item.subtitle}</p>
                       </div>
                     </div>
                     <Button
                       variant="ghost"
-                      className="px-3 py-1 text-[10px] shrink-0"
+                      className="px-3.5 py-1 min-h-[36px] min-w-[70px] text-[10px] shrink-0 font-bold hover:-translate-x-[2px] transition-transform"
                       onClick={() => router.push(item.link)}
                     >
-                      Telusuri &rarr;
+                      Telusuri <ArrowUpRight className="w-3.5 h-3.5 ml-0.5 inline" />
                     </Button>
-                  </div>
+                  </motion.div>
                 ))
               )}
-            </div>
+            </motion.div>
           </SectionCard>
         </div>
 
         {/* Right Column: Pergerakan Terbaru & Navigasi Cepat */}
         <div className="space-y-4">
           <SectionCard title="Pergerakan Terbaru">
-            <div className="divide-y divide-dashed divide-border-strong text-xs">
+            <div className="divide-y divide-dashed divide-border/65 text-xs">
               {recentEntries.length === 0 ? (
-                <div className="py-4 text-center text-ink-faint font-mono">
+                <div className="py-8 text-center text-ink-faint font-mono bg-bg/25 rounded border border-dashed border-border/50">
                   Belum ada catatan pergerakan.
                 </div>
               ) : (
@@ -282,19 +341,19 @@ export function DashboardClient({
                   const isPositive = e.qty > 0;
 
                   return (
-                    <div key={e.id} className="py-3 flex justify-between items-start gap-2">
+                    <div key={e.id} className="py-3.5 flex justify-between items-start gap-2 hover:bg-bg/10 px-1 transition-colors rounded-sm">
                       <div className="min-w-0">
-                        <span className="font-semibold text-ink block truncate">{prod?.name || "Produk dihapus"}</span>
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-ink-soft mt-1">
-                          <Tag variant="neutral" className="px-1 py-0">{getReasonLabel(e.reason)}</Tag>
-                          <span className="font-mono text-ink-faint">Batch: {batch?.batch_code || e.batch_id}</span>
+                        <span className="font-bold text-ink block truncate">{prod?.name || "Produk dihapus"}</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-ink-soft mt-1">
+                          <Tag variant={isPositive ? "success" : "neutral"} className="px-1.5 py-0">{getReasonLabel(e.reason)}</Tag>
+                          <span className="font-mono text-ink-faint text-[9px] border-l border-border pl-2">Batch: {batch?.batch_code || e.batch_id}</span>
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className={`font-mono font-bold ${isPositive ? "text-success" : "text-danger"}`}>
+                        <span className={`font-mono font-bold text-sm ${isPositive ? "text-success" : "text-danger"}`}>
                           {isPositive ? `+${e.qty}` : e.qty}
                         </span>
-                        <span className="text-[9px] text-ink-faint block font-mono">
+                        <span className="text-[9px] text-ink-faint block font-mono mt-0.5">
                           {new Date(e.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
@@ -309,30 +368,42 @@ export function DashboardClient({
             <div className="space-y-2">
               <Link
                 href="/manual"
-                className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
+                className="flex items-center justify-between p-3.5 rounded border border-border/80 hover:border-primary hover:bg-primary-light/40 text-xs font-bold text-ink-soft hover:text-ink transition-all duration-200 hover:translate-x-[2px]"
               >
-                <span>Pencatatan Masuk &amp; Keluar Manual</span>
+                <span className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-primary" />
+                  Pencatatan Masuk &amp; Keluar Manual
+                </span>
                 <span>&rarr;</span>
               </Link>
               <Link
                 href="/pesanan"
-                className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
+                className="flex items-center justify-between p-3.5 rounded border border-border/80 hover:border-primary hover:bg-primary-light/40 text-xs font-bold text-ink-soft hover:text-ink transition-all duration-200 hover:translate-x-[2px]"
               >
-                <span>Simulasi Marketplace</span>
+                <span className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-primary" />
+                  Simulasi Marketplace
+                </span>
                 <span>&rarr;</span>
               </Link>
               <Link
                 href="/retur"
-                className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
+                className="flex items-center justify-between p-3.5 rounded border border-border/80 hover:border-primary hover:bg-primary-light/40 text-xs font-bold text-ink-soft hover:text-ink transition-all duration-200 hover:translate-x-[2px]"
               >
-                <span>Inspeksi Retur Barang</span>
+                <span className="flex items-center gap-2">
+                  <ClipboardCheck className="w-4 h-4 text-primary" />
+                  Inspeksi Retur Barang
+                </span>
                 <span>&rarr;</span>
               </Link>
               <Link
                 href="/opname"
-                className="flex items-center justify-between p-3 rounded border border-border hover:border-primary hover:bg-primary-light/10 text-xs font-semibold text-ink-soft hover:text-ink transition"
+                className="flex items-center justify-between p-3.5 rounded border border-border/80 hover:border-primary hover:bg-primary-light/40 text-xs font-bold text-ink-soft hover:text-ink transition-all duration-200 hover:translate-x-[2px]"
               >
-                <span>Stok Opname Gudang</span>
+                <span className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-primary" />
+                  Stok Opname Gudang
+                </span>
                 <span>&rarr;</span>
               </Link>
             </div>

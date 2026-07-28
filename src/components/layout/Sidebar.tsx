@@ -13,6 +13,8 @@ import { IconScale } from "../icons/IconScale";
 import { IconBell } from "../icons/IconBell";
 import { IconVial } from "../icons/IconVial";
 import { IconBoxes } from "../icons/IconBoxes";
+import { LogOut } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface SidebarProps {
   onClose?: () => void;
@@ -39,18 +41,18 @@ export function Sidebar({ onClose }: SidebarProps) {
   if (!user) return null;
 
   return (
-    <aside className="w-[248px] bg-sidebar text-sidebar-soft h-full flex flex-col justify-between shrink-0 overflow-y-auto border-r border-border/10">
+    <aside className="w-[248px] bg-sidebar text-sidebar-soft h-full flex flex-col justify-between shrink-0 overflow-y-auto border-r border-border/10 shadow-lg">
       <div className="flex flex-col">
         {/* Brand & Close Button on Mobile */}
         <div className="p-6 border-b border-sidebar-soft/10 flex justify-between items-center">
           <div>
             <span className="font-heading text-lg font-bold text-white tracking-wide block">StokLedger</span>
-            <span className="text-[10px] text-sidebar-soft/70 uppercase tracking-wider block mt-0.5">Append-Only Inventory</span>
+            <span className="text-[10px] text-sidebar-soft/70 uppercase tracking-wider block mt-0.5 font-mono">Append-Only Inventory</span>
           </div>
           {onClose && (
             <button 
               onClick={onClose} 
-              className="lg:hidden p-1 rounded hover:bg-white/10 text-white"
+              className="lg:hidden p-2 rounded-full hover:bg-white/10 text-white transition-all duration-200"
               aria-label="Tutup menu"
             >
               ✕
@@ -59,7 +61,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
 
         {/* User Info */}
-        <div className="px-6 py-4 border-b border-sidebar-soft/10 bg-black/10">
+        <div className="px-6 py-4 border-b border-sidebar-soft/10 bg-black/20">
           <div className="font-heading text-xs font-semibold text-white truncate">{user.name}</div>
           <div className="text-[10px] text-sidebar-soft/80 capitalize font-mono mt-0.5">Admin</div>
         </div>
@@ -75,14 +77,20 @@ export function Sidebar({ onClose }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-sm text-sm font-medium transition-colors duration-150 min-h-[44px] ${
-                  isActive
-                    ? "bg-primary-dark text-white font-semibold"
-                    : "hover:bg-primary-dark/30 hover:text-white"
-                }`}
+                className="block"
               >
-                <Icon className={`w-5 h-5 ${isActive ? "text-white" : "text-sidebar-soft"}`} />
-                <span>{item.label}</span>
+                <motion.div
+                  whileHover={{ x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-sm text-sm font-medium transition-colors duration-150 min-h-[44px] ${
+                    isActive
+                      ? "bg-primary text-white font-semibold shadow-inner"
+                      : "hover:bg-primary-dark/40 hover:text-white"
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 ${isActive ? "text-white" : "text-sidebar-soft"}`} />
+                  <span>{item.label}</span>
+                </motion.div>
               </Link>
             );
           })}
@@ -91,12 +99,15 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       {/* Logout */}
       <div className="p-4 border-t border-sidebar-soft/10">
-        <button
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           onClick={logout}
-          className="w-full flex items-center justify-center px-4 py-3 text-xs font-medium text-sidebar-soft hover:text-white bg-white/5 hover:bg-white/10 rounded transition-colors duration-150 min-h-[44px]"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold text-sidebar-soft hover:text-white bg-white/5 hover:bg-danger/80 rounded transition-all duration-200 min-h-[44px]"
         >
-          Keluar (Log Out)
-        </button>
+          <LogOut className="w-4 h-4" />
+          <span>Keluar (Log Out)</span>
+        </motion.button>
       </div>
     </aside>
   );
