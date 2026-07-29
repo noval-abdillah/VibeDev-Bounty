@@ -32,6 +32,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
   const [bundleComponents, setBundleComponents] = useState<BundleComponent[]>(serverBundleComponents as BundleComponent[]);
   
   const [searchQuery, setSearchQuery] = useState("");
+  const [hideZeroStock, setHideZeroStock] = useState(false);
 
   // Product form state
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -105,11 +106,20 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
     if (storedThreshold) setExpiryThreshold(parseInt(storedThreshold));
   }, []);
 
-  const filteredProducts = products.filter(
-    (p) =>
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (hideZeroStock) {
+      const stock = productStocks[p.id] || 0;
+      if (stock <= 0) return false;
+    }
+
+    return true;
+  });
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -434,9 +444,22 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
       {activeTab === "produk" && (
         <div className="space-y-4">
-          <div className="flex flex-col md:flex-row justify-between gap-4">
-            <div className="w-full md:w-72"><Input placeholder="Cari nama atau SKU produk..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-            <div className="flex gap-2">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+              <div className="w-full md:w-72">
+                <Input placeholder="Cari nama atau SKU produk..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-ink-soft cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  checked={hideZeroStock} 
+                  onChange={(e) => setHideZeroStock(e.target.checked)} 
+                  className="rounded border-border text-primary focus:ring-primary/20 w-4 h-4"
+                />
+                Sembunyikan produk stok kosong
+              </label>
+            </div>
+            <div className="flex gap-2 w-full md:w-auto justify-end">
               <Button variant="ghost" onClick={handleExportProduk}>Ekspor Excel</Button>
               {isAdmin && <Button onClick={() => setShowAddProduct(true)}>+ Tambah Produk Baru</Button>}
             </div>
