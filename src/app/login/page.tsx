@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { TEST_USERS } from "@/constants/users";
 import type { UserRole } from "@/types";
@@ -10,6 +10,7 @@ import { Input, Button } from "@/components/ui";
 export default function LoginPage() {
   const { user, login, loading } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [error, setError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
@@ -25,9 +26,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (mounted && user) {
-      router.push("/dashboard");
+      const next = searchParams.get("next");
+      const isSafeInternal = next && next.startsWith("/") && !next.startsWith("//");
+      router.push(isSafeInternal ? next : "/dashboard");
     }
-  }, [user, router, mounted]);
+  }, [user, router, mounted, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +50,9 @@ export default function LoginPage() {
     setSigningIn(false);
 
     if (success) {
-      router.push("/dashboard");
+      const next = searchParams.get("next");
+      const isSafeInternal = next && next.startsWith("/") && !next.startsWith("//");
+      router.push(isSafeInternal ? next : "/dashboard");
     } else {
       setError("Email atau password salah. Pastikan akun sudah didaftarkan oleh Owner.");
     }
@@ -60,7 +65,9 @@ export default function LoginPage() {
     setSigningIn(false);
 
     if (success) {
-      router.push("/dashboard");
+      const next = searchParams.get("next");
+      const isSafeInternal = next && next.startsWith("/") && !next.startsWith("//");
+      router.push(isSafeInternal ? next : "/dashboard");
     } else {
       setError("Login gagal. Jalankan seed akun tester di /api/seed-users terlebih dahulu.");
     }

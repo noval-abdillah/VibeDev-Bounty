@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { Topbar } from "./Topbar";
 import { AnimatePresence, motion } from "framer-motion";
@@ -15,6 +15,7 @@ const Sidebar = dynamic(() => import("./Sidebar").then(mod => ({ default: mod.Si
 export function MainLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
   const router = useRouter();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -24,11 +25,12 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (mounted && !loading && !user) {
-      router.push("/login");
+      const next = encodeURIComponent(pathname || "/dashboard");
+      router.push(`/login?next=${next}`);
     }
-  }, [user, loading, router, mounted]);
+  }, [user, loading, router, mounted, pathname]);
 
-  if (!mounted || loading || !user) {
+  if (!mounted || loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-bg gap-3">
         <div className="relative w-12 h-12">
@@ -36,6 +38,18 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           <span className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></span>
         </div>
         <div className="text-ink-soft font-mono text-xs tracking-wider animate-pulse">Memproses Autentikasi...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-bg gap-3">
+        <div className="relative w-12 h-12">
+          <span className="absolute inset-0 rounded-full border-4 border-primary/20"></span>
+          <span className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></span>
+        </div>
+        <div className="text-ink-soft font-mono text-xs tracking-wider animate-pulse">Mengalihkan ke halaman masuk...</div>
       </div>
     );
   }
