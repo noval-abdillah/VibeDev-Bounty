@@ -35,10 +35,14 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
   // Product form state
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [isSkuLocked, setIsSkuLocked] = useState(false);
+  const [skuLockReason, setSkuLockReason] = useState("");
   const [newProductName, setNewProductName] = useState("");
   const [newProductSku, setNewProductSku] = useState("");
   const [newProductImage, setNewProductImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [productFormError, setProductFormError] = useState("");
 
@@ -113,6 +117,96 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       setProductFormError("Nama dan SKU wajib diisi.");
       return;
     }
+
+    if (editingProductId) {
+      // MODE EDIT
+      setIsUploading(true);
+      let finalImageUrl = existingImageUrl;
+
+      if (newProductImage) {
+        try {
+          const compressedBlob = await compressImage(newProductImage);
+          const fileName = `${newProductSku.toUpperCase()}-${Date.now()}.jpg`;
+
+          const { data: uploadData, error: uploadErr } = await supabase.storage
+            .from("product-images")
+            .upload(fileName, compressedBlob, {
+              contentType: "image/jpeg",
+              upsert: true,
+            });
+
+          if (uploadErr) {
+            showToast("Upload gambar gagal, menyimpan tanpa mengubah gambar...", "warning");
+          } else if (uploadData) {
+            const { data: publicUrlData } = supabase.storage
+              .from("product-images")
+              .getPublicUrl(uploadData.path);
+            finalImageUrl = publicUrlData?.publicUrl || null;
+          }
+        } catch (err: any) {
+          showToast("Proses kompresi gambar gagal, menyimpan tanpa mengubah gambar...", "warning");
+        }
+      }
+
+      // Hit API Edit
+      try {
+        const res = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_product",
+            payload: {
+              product_id: editingProductId,
+              name: newProductName.trim(),
+              sku: newProductSku.toUpperCase().trim(),
+              image_url: finalImageUrl
+            }
+          })
+        });
+
+        const result = await res.json();
+        if (!res.ok) {
+          setProductFormError(result.error || "Gagal mengubah data produk.");
+          setIsUploading(false);
+          return;
+        }
+
+        showToast("Perubahan data produk berhasil disimpan.", "success");
+        setNewProductName(""); 
+        setNewProductSku(""); 
+        setNewProductImage(null); 
+        setImagePreview(null); 
+        setExistingImageUrl(null);
+        setEditingProductId(null);
+        setIsSkuLocked(false);
+        setSkuLockReason("");
+        setProductFormError(""); 
+        setShowAddProduct(false);
+
+        // Refresh
+        const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
+        if (prods) {
+          setProducts(prods.map((p: any) => ({
+            id: p.product_id,
+            name: p.name,
+            sku: p.sku,
+            image_url: p.image_url || null,
+            is_active: p.is_active,
+            created_at: p.created_at
+          })));
+          const stocks: Record<string, number> = {};
+          prods.forEach((p: any) => { stocks[p.product_id] = p.total_stock; });
+          setProductStocks(stocks);
+        }
+      } catch (err: any) {
+        setProductFormError(err.message || "Gagal mengubah data produk.");
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
+
+    // MODE TAMBAH
     if (products.some((p) => p.sku.toLowerCase() === newProductSku.trim().toLowerCase())) {
       setProductFormError("SKU sudah digunakan.");
       return;
@@ -184,7 +278,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       });
     }
 
-    setNewProductName(""); setNewProductSku(""); setNewProductImage(null); setImagePreview(null); setProductFormError(""); setShowAddProduct(false);
+    setNewProductName(""); setNewProductSku(""); setNewProductImage(null); setImagePreview(null); setExistingImageUrl(null); setEditingProductId(null); setIsSkuLocked(false); setSkuLockReason(""); setProductFormError(""); setShowAddProduct(false);
     // Refresh
     const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
     if (prods) {
@@ -302,12 +396,27 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
           </div>
 
           {showAddProduct && (
-            <SectionCard title="Tambah Produk Master Baru">
+            <SectionCard title={editingProductId ? "Edit Produk" : "Tambah Produk Master Baru"}>
               <form onSubmit={handleAddProduct} className="space-y-4">
                 {productFormError && <div className="p-3 bg-danger-bg text-danger text-xs rounded border border-danger/30 font-semibold font-mono">{productFormError}</div>}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input label="Nama Produk" placeholder="Contoh: Brightening Serum Niacinamide 10%" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} required />
-                  <Input label="SKU Produk (Kode Unik)" placeholder="Contoh: SK-SR-005" value={newProductSku} onChange={(e) => setNewProductSku(e.target.value)} required />
+                  <div className="relative">
+                    <Input 
+                      label="SKU Produk (Kode Unik)" 
+                      placeholder="Contoh: SK-SR-005" 
+                      value={newProductSku} 
+                      onChange={(e) => setNewProductSku(e.target.value)} 
+                      required 
+                      disabled={isSkuLocked}
+                      className={isSkuLocked ? "bg-bg/80 text-ink-soft cursor-not-allowed opacity-75" : ""}
+                    />
+                    {isSkuLocked && (
+                      <span className="text-[10px] text-warning font-semibold mt-1 block">
+                        ⚠️ SKU tidak bisa diubah karena produk sudah memiliki riwayat transaksi/batch.
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
                 {/* Drag and Drop Image Upload */}
@@ -370,9 +479,19 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
                 </div>
 
                 <div className="flex gap-2 justify-end pt-2">
-                  <Button variant="ghost" type="button" disabled={isUploading} onClick={() => { setShowAddProduct(false); setNewProductImage(null); setImagePreview(null); }}>Batal</Button>
+                  <Button variant="ghost" type="button" disabled={isUploading} onClick={() => { 
+                    setShowAddProduct(false); 
+                    setEditingProductId(null);
+                    setNewProductName("");
+                    setNewProductSku("");
+                    setNewProductImage(null); 
+                    setImagePreview(null); 
+                    setExistingImageUrl(null);
+                    setIsSkuLocked(false);
+                    setSkuLockReason("");
+                  }}>Batal</Button>
                   <Button type="submit" disabled={isUploading}>
-                    {isUploading ? "Mengunggah..." : "Simpan Produk"}
+                    {isUploading ? "Mengunggah..." : editingProductId ? "Simpan Perubahan" : "Simpan Produk"}
                   </Button>
                 </div>
               </form>
@@ -437,6 +556,44 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
                           )}
                         </td>
                         <td className="py-3 px-4 text-center space-x-2 whitespace-nowrap">
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              className="px-2.5 py-1 hover:border-primary/50"
+                              onClick={async () => {
+                                setEditingProductId(p.id);
+                                setNewProductName(p.name);
+                                setNewProductSku(p.sku);
+                                setExistingImageUrl(p.image_url);
+                                setImagePreview(p.image_url);
+                                setShowAddProduct(true);
+                                
+                                // Real-time check to API if SKU should be locked
+                                try {
+                                  const res = await fetch("/api/products", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      action: "check_sku_locked",
+                                      payload: { product_id: p.id }
+                                    })
+                                  });
+                                  const data = await res.json();
+                                  if (data.locked) {
+                                    setIsSkuLocked(true);
+                                    setSkuLockReason(data.reason);
+                                  } else {
+                                    setIsSkuLocked(false);
+                                    setSkuLockReason("");
+                                  }
+                                } catch (err) {
+                                  setIsSkuLocked(false);
+                                }
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          )}
                           <Link href={`/produk/${p.id}`}><Button variant="ghost" className="px-2.5 py-1">Detail &amp; Batch</Button></Link>
                           {isAdmin && (
                             <Button
