@@ -7,9 +7,11 @@ import { supabase } from "@/lib/supabase/client";
 import { exportToXlsx } from "@/lib/export";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Batch, OpnameSession, OpnameItem } from "@/types";
+import { useToast } from "@/context/ToastContext";
 
 export default function StokOpnamePage() {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -130,10 +132,10 @@ export default function StokOpnamePage() {
 
   const handleInputChange = (productId: string, batchId: string, val: string) => {
     if (isReadOnly) return;
-    setPhysicalCounts({
-      ...physicalCounts,
+    setPhysicalCounts((prev) => ({
+      ...prev,
       [`${productId}_${batchId}`]: val,
-    });
+    }));
   };
 
   const handleSaveDraft = async () => {
@@ -171,8 +173,10 @@ export default function StokOpnamePage() {
       );
 
       setSuccess("Draft hasil hitung fisik berhasil disimpan.");
+      showToast("Draft hasil hitung fisik berhasil disimpan.", "success");
       await loadSessions();
     } catch {
+      showToast("Gagal menyimpan draft.", "danger");
       setError("Gagal menyimpan draft.");
     } finally {
       setLoading(false);
@@ -197,7 +201,8 @@ export default function StokOpnamePage() {
         const pBatches = batches.filter((b) => b.product_id === p.id);
         for (const b of pBatches) {
           const key = `${p.id}_${b.id}`;
-          const physicalVal = parseInt(physicalCounts[key]);
+          const physicalValStr = physicalCounts[key] !== undefined ? physicalCounts[key] : "0";
+          const physicalVal = parseInt(physicalValStr);
           const systemVal = batchStockMap[b.id] || 0;
 
           if (isNaN(physicalVal) || physicalVal < 0) {
@@ -234,7 +239,7 @@ export default function StokOpnamePage() {
           setLoading(true);
           try {
             await supabase.from("opname_items").delete().eq("session_id", activeSession.id);
-            await supabase.from("opname_items").insert(
+            const insertRes = await supabase.from("opname_items").insert(
               finalItems.map((item) => ({
                 session_id: activeSession.id,
                 product_id: item.product_id,
@@ -243,6 +248,18 @@ export default function StokOpnamePage() {
                 system_qty: item.system_qty,
               }))
             );
+
+            if (insertRes.error) throw insertRes.error;
+
+            // Verification safeguard check
+            const { data: verifiedItems } = await supabase
+              .from("opname_items")
+              .select("id")
+              .eq("session_id", activeSession.id);
+
+            if (!verifiedItems || verifiedItems.length !== finalItems.length) {
+              throw new Error(`Data mismatch safeguard: Hanya ${verifiedItems?.length || 0} dari ${finalItems.length} item opname yang berhasil disimpan. Proses dihentikan.`);
+            }
 
             const res = await fetch("/api/ledger", {
               method: "POST",
@@ -258,11 +275,13 @@ export default function StokOpnamePage() {
             const result = await res.json();
             if (!res.ok) throw new Error(result.error);
 
+            showToast(`Opname selesai! Menulis ${adjustments.length} entri koreksi ke Buku Besar.`, "success");
             setSuccess(`Opname selesai! Menulis ${adjustments.length} entri koreksi ke Buku Besar.`);
             setActiveSession(null);
             setPhysicalCounts({});
             await loadSessions();
           } catch (err: any) {
+            showToast(err.message || "Gagal merampungkan opname.", "danger");
             setError(err.message || "Gagal merampungkan opname.");
           } finally {
             setLoading(false);
@@ -372,9 +391,8 @@ export default function StokOpnamePage() {
                 {products.flatMap((p) => {
                   const pBatches = batches.filter((b) => b.product_id === p.id);
                   return pBatches.map((b) => {
-                    // System value calculation (we mock state temporarily to show sync)
                     const key = `${p.id}_${b.id}`;
-                    const physicalValStr = physicalCounts[key] || "0";
+                    const physicalValStr = physicalCounts[key] !== undefined ? physicalCounts[key] : "0";
                     const physicalVal = parseInt(physicalValStr) || 0;
                     
                     return (
