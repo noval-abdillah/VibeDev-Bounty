@@ -120,6 +120,16 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
     if (editingProductId) {
       // MODE EDIT
+      // Client-side SKU uniqueness validation before submitting edit
+      const duplicateSku = products.some(
+        (p) => p.id !== editingProductId && p.sku.toLowerCase() === newProductSku.trim().toLowerCase()
+      );
+      if (duplicateSku) {
+        setProductFormError(`SKU ${newProductSku.toUpperCase()} sudah digunakan oleh produk lain. Gunakan SKU yang berbeda.`);
+        showToast(`SKU ${newProductSku.toUpperCase()} sudah digunakan oleh produk lain.`, "danger");
+        return;
+      }
+
       setIsUploading(true);
       let finalImageUrl = existingImageUrl;
 
@@ -166,7 +176,12 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
         const result = await res.json();
         if (!res.ok) {
-          setProductFormError(result.error || "Gagal mengubah data produk.");
+          let msg = result.error || "Gagal mengubah data produk.";
+          if (msg.toLowerCase().includes("fetch")) {
+            msg = "Gagal terhubung ke server, periksa koneksi internet dan coba lagi.";
+          }
+          setProductFormError(msg);
+          showToast(msg, "danger");
           setIsUploading(false);
           return;
         }
@@ -199,7 +214,12 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
           setProductStocks(stocks);
         }
       } catch (err: any) {
-        setProductFormError(err.message || "Gagal mengubah data produk.");
+        let msg = "Terjadi kesalahan saat menyimpan produk. Silakan coba lagi.";
+        if (err.message?.toLowerCase().includes("fetch")) {
+          msg = "Gagal terhubung ke server, periksa koneksi internet dan coba lagi.";
+        }
+        setProductFormError(msg);
+        showToast(msg, "danger");
       } finally {
         setIsUploading(false);
       }
@@ -208,7 +228,8 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
     // MODE TAMBAH
     if (products.some((p) => p.sku.toLowerCase() === newProductSku.trim().toLowerCase())) {
-      setProductFormError("SKU sudah digunakan.");
+      setProductFormError(`SKU ${newProductSku.toUpperCase()} sudah digunakan oleh produk lain. Gunakan SKU yang berbeda.`);
+      showToast(`SKU ${newProductSku.toUpperCase()} sudah digunakan oleh produk lain.`, "danger");
       return;
     }
 
@@ -240,59 +261,85 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       }
     }
 
-    const { data: newProd, error } = await supabase
-      .from("products")
-      .insert({ 
-        name: newProductName, 
-        sku: newProductSku.toUpperCase(), 
-        is_active: true,
-        image_url: finalImageUrl
-      })
-      .select().single();
+    try {
+      const { data: newProd, error } = await supabase
+        .from("products")
+        .insert({ 
+          name: newProductName.trim(), 
+          sku: newProductSku.toUpperCase().trim(), 
+          is_active: true,
+          image_url: finalImageUrl
+        })
+        .select().single();
 
-    setIsUploading(false);
+      if (error || !newProd) {
+        let msg = "Terjadi kesalahan saat menyimpan produk. Silakan coba lagi.";
+        if (error) {
+          if (error.code === "23505") {
+            msg = `SKU ${newProductSku.toUpperCase().trim()} sudah digunakan oleh produk lain. Gunakan SKU yang berbeda.`;
+          } else if (error.code === "23502") {
+            msg = "Field wajib tidak boleh kosong.";
+          } else if (error.message?.toLowerCase().includes("fetch")) {
+            msg = "Gagal terhubung ke server, periksa koneksi internet dan coba lagi.";
+          }
+        }
+        setProductFormError(msg);
+        showToast(msg, "danger");
+        setIsUploading(false);
+        return;
+      }
 
-    if (error || !newProd) { setProductFormError("Gagal menambahkan produk."); return; }
+      const { data: newBatch, error: batchErr } = await supabase.from("batches").insert({
+        product_id: newProd.id,
+        batch_code: `B-${newProd.sku}-01`,
+        expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      }).select().single();
 
-    const { data: newBatch } = await supabase.from("batches").insert({
-      product_id: newProd.id,
-      batch_code: `B-${newProd.sku}-01`,
-      expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    }).select().single();
+      if (newBatch) {
+        await fetch("/api/ledger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create_ledger_entry",
+            payload: {
+              product_id: newProd.id,
+              batch_id: newBatch.id,
+              qty: 0,
+              reason: "saldo_awal",
+              channel: "system",
+              reference_id: "PO-INIT-001",
+            },
+          }),
+        });
+      }
 
-    if (newBatch) {
-      await fetch("/api/ledger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create_ledger_entry",
-          payload: {
-            product_id: newProd.id,
-            batch_id: newBatch.id,
-            qty: 0,
-            reason: "saldo_awal",
-            channel: "system",
-            reference_id: "PO-INIT-001",
-          },
-        }),
-      });
-    }
-
-    setNewProductName(""); setNewProductSku(""); setNewProductImage(null); setImagePreview(null); setExistingImageUrl(null); setEditingProductId(null); setIsSkuLocked(false); setSkuLockReason(""); setProductFormError(""); setShowAddProduct(false);
-    // Refresh
-    const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
-    if (prods) {
-      setProducts(prods.map((p: any) => ({
-        id: p.product_id,
-        name: p.name,
-        sku: p.sku,
-        image_url: p.image_url || null,
-        is_active: p.is_active,
-        created_at: p.created_at
-      })));
-      const stocks: Record<string, number> = {};
-      prods.forEach((p: any) => { stocks[p.product_id] = p.total_stock; });
-      setProductStocks(stocks);
+      showToast("Produk baru berhasil ditambahkan.", "success");
+      setNewProductName(""); setNewProductSku(""); setNewProductImage(null); setImagePreview(null); setExistingImageUrl(null); setEditingProductId(null); setIsSkuLocked(false); setSkuLockReason(""); setProductFormError(""); setShowAddProduct(false);
+      
+      // Refresh
+      const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
+      if (prods) {
+        setProducts(prods.map((p: any) => ({
+          id: p.product_id,
+          name: p.name,
+          sku: p.sku,
+          image_url: p.image_url || null,
+          is_active: p.is_active,
+          created_at: p.created_at
+        })));
+        const stocks: Record<string, number> = {};
+        prods.forEach((p: any) => { stocks[p.product_id] = p.total_stock; });
+        setProductStocks(stocks);
+      }
+    } catch (err: any) {
+      let msg = "Terjadi kesalahan saat menyimpan produk. Silakan coba lagi.";
+      if (err.message?.toLowerCase().includes("fetch")) {
+        msg = "Gagal terhubung ke server, periksa koneksi internet dan coba lagi.";
+      }
+      setProductFormError(msg);
+      showToast(msg, "danger");
+    } finally {
+      setIsUploading(false);
     }
   };
 
