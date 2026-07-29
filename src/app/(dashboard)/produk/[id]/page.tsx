@@ -6,6 +6,7 @@ import { SectionCard, Tag, Button } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import { getReasonLabel } from "@/lib/labels";
 import type { Product, Batch, LedgerEntry } from "@/types";
+import { Package } from "lucide-react";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -133,13 +134,22 @@ export default function ProductDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-md border border-border">
-        <div>
-          <button onClick={() => router.push("/produk")} className="text-xs font-semibold text-primary hover:underline block mb-1">
-            &larr; Kembali ke Katalog
-          </button>
-          <h2 className="font-heading text-xl font-bold text-ink">{product.name}</h2>
-          <span className="font-mono text-xs text-ink-soft">SKU: {product.sku}</span>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-md border border-border shadow-sm">
+        <div className="flex flex-col md:flex-row gap-4 items-start">
+          <div className="w-20 h-20 rounded border border-border bg-bg/25 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+            {product.image_url ? (
+              <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+            ) : (
+              <Package className="w-8 h-8 text-ink-faint" />
+            )}
+          </div>
+          <div>
+            <button onClick={() => router.push("/produk")} className="text-xs font-semibold text-primary hover:underline block mb-1">
+              &larr; Kembali ke Katalog
+            </button>
+            <h2 className="font-heading text-xl font-bold text-ink">{product.name}</h2>
+            <span className="font-mono text-xs text-ink-soft">SKU: {product.sku}</span>
+          </div>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="bg-bg p-3 rounded border border-border text-center min-w-[100px]">

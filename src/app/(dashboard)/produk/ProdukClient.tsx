@@ -9,6 +9,8 @@ import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Bundle, BundleComponent } from "@/types";
 import Link from "next/link";
 import { useToast } from "@/context/ToastContext";
+import { compressImage } from "@/lib/image";
+import { Package, UploadCloud, X } from "lucide-react";
 
 interface ProdukClientProps {
   serverProducts: any[];
@@ -35,6 +37,9 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProductName, setNewProductName] = useState("");
   const [newProductSku, setNewProductSku] = useState("");
+  const [newProductImage, setNewProductImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [productFormError, setProductFormError] = useState("");
 
   // Bundle form state
@@ -87,6 +92,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       id: p.product_id,
       name: p.name,
       sku: p.sku,
+      image_url: p.image_url || null,
       is_active: p.is_active,
       created_at: p.created_at
     })));
@@ -112,10 +118,45 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       return;
     }
 
+    setIsUploading(true);
+    let finalImageUrl = null;
+
+    if (newProductImage) {
+      try {
+        const compressedBlob = await compressImage(newProductImage);
+        const fileName = `${newProductSku.toUpperCase()}-${Date.now()}.jpg`;
+
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from("product-images")
+          .upload(fileName, compressedBlob, {
+            contentType: "image/jpeg",
+            upsert: true,
+          });
+
+        if (uploadErr) {
+          showToast("Upload gambar gagal, menyimpan produk tanpa gambar...", "warning");
+        } else if (uploadData) {
+          const { data: publicUrlData } = supabase.storage
+            .from("product-images")
+            .getPublicUrl(uploadData.path);
+          finalImageUrl = publicUrlData?.publicUrl || null;
+        }
+      } catch (err: any) {
+        showToast("Proses kompresi gambar gagal, menyimpan produk tanpa gambar...", "warning");
+      }
+    }
+
     const { data: newProd, error } = await supabase
       .from("products")
-      .insert({ name: newProductName, sku: newProductSku.toUpperCase(), is_active: true })
+      .insert({ 
+        name: newProductName, 
+        sku: newProductSku.toUpperCase(), 
+        is_active: true,
+        image_url: finalImageUrl
+      })
       .select().single();
+
+    setIsUploading(false);
 
     if (error || !newProd) { setProductFormError("Gagal menambahkan produk."); return; }
 
@@ -143,11 +184,18 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       });
     }
 
-    setNewProductName(""); setNewProductSku(""); setProductFormError(""); setShowAddProduct(false);
+    setNewProductName(""); setNewProductSku(""); setNewProductImage(null); setImagePreview(null); setProductFormError(""); setShowAddProduct(false);
     // Refresh
     const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
     if (prods) {
-      setProducts(prods.map((p: any) => ({ id: p.product_id, name: p.name, sku: p.sku, is_active: p.is_active, created_at: p.created_at })));
+      setProducts(prods.map((p: any) => ({
+        id: p.product_id,
+        name: p.name,
+        sku: p.sku,
+        image_url: p.image_url || null,
+        is_active: p.is_active,
+        created_at: p.created_at
+      })));
       const stocks: Record<string, number> = {};
       prods.forEach((p: any) => { stocks[p.product_id] = p.total_stock; });
       setProductStocks(stocks);
@@ -158,7 +206,14 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
     await supabase.from("products").update({ is_active: !currentStatus }).eq("id", id);
     const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
     if (prods) {
-      setProducts(prods.map((p: any) => ({ id: p.product_id, name: p.name, sku: p.sku, is_active: p.is_active, created_at: p.created_at })));
+      setProducts(prods.map((p: any) => ({
+        id: p.product_id,
+        name: p.name,
+        sku: p.sku,
+        image_url: p.image_url || null,
+        is_active: p.is_active,
+        created_at: p.created_at
+      })));
     }
   };
 
@@ -254,7 +309,72 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
                   <Input label="Nama Produk" placeholder="Contoh: Brightening Serum Niacinamide 10%" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} required />
                   <Input label="SKU Produk (Kode Unik)" placeholder="Contoh: SK-SR-005" value={newProductSku} onChange={(e) => setNewProductSku(e.target.value)} required />
                 </div>
-                <div className="flex gap-2 justify-end"><Button variant="ghost" type="button" onClick={() => setShowAddProduct(false)}>Batal</Button><Button type="submit">Simpan Produk</Button></div>
+                
+                {/* Drag and Drop Image Upload */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-semibold text-ink-soft/90">Gambar Produk (Opsional, Max 2MB)</span>
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && file.type.startsWith("image/")) {
+                        if (file.size > 2 * 1024 * 1024) {
+                          showToast("Ukuran file melebihi 2MB.", "warning");
+                          return;
+                        }
+                        setNewProductImage(file);
+                        setImagePreview(URL.createObjectURL(file));
+                      } else {
+                        showToast("Format berkas harus berupa gambar (jpg, png, webp).", "warning");
+                      }
+                    }}
+                    className="border-2 border-dashed border-border/80 hover:border-primary/50 transition-all rounded-md p-6 flex flex-col items-center justify-center gap-2 cursor-pointer bg-bg/20"
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "image/jpeg,image/png,image/webp";
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) {
+                          if (file.size > 2 * 1024 * 1024) {
+                            showToast("Ukuran file melebihi 2MB.", "warning");
+                            return;
+                          }
+                          setNewProductImage(file);
+                          setImagePreview(URL.createObjectURL(file));
+                        }
+                      };
+                      input.click();
+                    }}
+                  >
+                    {imagePreview ? (
+                      <div className="relative w-24 h-24 rounded border border-border overflow-hidden group pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                        <button 
+                          type="button" 
+                          onClick={() => { setNewProductImage(null); setImagePreview(null); }}
+                          className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white rounded-full w-8 h-8 m-auto"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-8 h-8 text-ink-faint animate-bounce-slow" />
+                        <span className="text-xs font-semibold text-ink-soft">Tarik & Lepas atau Klik untuk unggah gambar</span>
+                        <span className="text-[10px] text-ink-faint">Mendukung JPG, PNG, WEBP hingga 2MB</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2">
+                  <Button variant="ghost" type="button" disabled={isUploading} onClick={() => { setShowAddProduct(false); setNewProductImage(null); setImagePreview(null); }}>Batal</Button>
+                  <Button type="submit" disabled={isUploading}>
+                    {isUploading ? "Mengunggah..." : "Simpan Produk"}
+                  </Button>
+                </div>
               </form>
             </SectionCard>
           )}
@@ -264,6 +384,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border text-xs font-semibold text-ink-soft uppercase bg-bg/50">
+                    <th className="py-3 px-4 w-16">Foto</th>
                     <th className="py-3 px-4">Nama Produk</th>
                     <th className="py-3 px-4">SKU</th>
                     <th className="py-3 px-4 text-right">Stok Fisik</th>
@@ -281,6 +402,20 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
                     return (
                       <tr key={p.id} className={`hover:bg-bg/10 transition-colors ${!p.is_active ? "opacity-55" : ""}`}>
+                        <td className="py-3 px-4">
+                          <div className="w-10 h-10 rounded-sm border border-border/80 bg-bg/30 flex items-center justify-center overflow-hidden">
+                            {p.image_url ? (
+                              <img 
+                                src={p.image_url} 
+                                alt={p.name} 
+                                className="w-full h-full object-cover" 
+                                loading="lazy"
+                              />
+                            ) : (
+                              <Package className="w-5 h-5 text-ink-faint" />
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 px-4">
                           <Link href={`/produk/${p.id}`} className="font-heading font-semibold text-primary hover:underline">
                             {p.name}

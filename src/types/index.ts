@@ -10,6 +10,7 @@ export interface Product {
   id: string;
   name: string;
   sku: string;
+  image_url?: string | null;
   is_active: boolean;
   created_at: string;
 }
