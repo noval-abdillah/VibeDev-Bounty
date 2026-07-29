@@ -6,6 +6,7 @@ import { exportToXlsx, formatDate } from "@/lib/export";
 import { getReasonLabel, getChannelLabel } from "@/lib/labels";
 import { writeLedgerEntry } from "@/lib/ledger";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
+import { useToast } from "@/context/ToastContext";
 
 interface LedgerClientProps {
   serverProducts: any[];
@@ -14,6 +15,7 @@ interface LedgerClientProps {
 }
 
 export function LedgerClient({ serverProducts, serverBatches, serverLedger }: LedgerClientProps) {
+  const { showToast } = useToast();
   const [products] = useState(serverProducts);
   const [batches] = useState(serverBatches);
   const [ledgerEntries, setLedgerEntries] = useState(serverLedger);
@@ -93,15 +95,17 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
         ref
       );
       if (result) {
-        alert("Koreksi entri salah input berhasil dicatat.");
+        showToast("Koreksi entri salah input berhasil dicatat.", "success");
         setReversalData(null);
-        // Reload data/state
-        window.location.reload();
+        // Reload data/state setelah delay agar toast sempat dibaca
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
       } else {
-        alert("Gagal mencatat koreksi salah input.");
+        showToast("Gagal mencatat koreksi salah input.", "danger");
       }
     } catch (err: any) {
-      alert("Gagal mencatat koreksi: " + err.message);
+      showToast("Gagal mencatat koreksi: " + err.message, "danger");
     }
   };
 

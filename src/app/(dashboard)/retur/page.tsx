@@ -5,11 +5,13 @@ import { useUser } from "@/context/UserContext";
 import { SectionCard, Button, Tag, Input } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import type { Product, ReturnItem } from "@/types";
+import { useToast } from "@/context/ToastContext";
 
 export const dynamic = "force-dynamic";
 
 export default function ReturPage() {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -111,10 +113,10 @@ export default function ReturPage() {
           delete updatedInputs[ret.id];
           setLayakInputs(updatedInputs);
 
-          alert(`Sukses memproses inspeksi retur order ${ret.order_code} sebagai ${condition.toUpperCase().replace("_", " ")}.`);
+          showToast(`Sukses memproses inspeksi retur order ${ret.order_code} sebagai ${condition.toUpperCase().replace("_", " ")}.`, "success");
           fetchData();
         } catch (err: any) {
-          alert(err.message || "Gagal memproses retur.");
+          showToast(err.message || "Gagal memproses retur.", "danger");
         } finally {
           setLoading(false);
         }
@@ -381,8 +383,9 @@ export default function ReturPage() {
                 Batal
               </Button>
               <Button variant="primary" disabled={loading} onClick={async () => {
-                await confirmData.action();
+                const actionFn = confirmData.action;
                 setConfirmData(null);
+                await actionFn();
               }}>
                 {loading ? "Memproses..." : "Konfirmasi & Komit"}
               </Button>

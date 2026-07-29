@@ -6,11 +6,13 @@ import { SectionCard, Input, Select, Button, Tag } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import type { Order, ReturnItem, Product, Bundle, BundleComponent, OrderStatus } from "@/types";
 import { IconFlask } from "@/components/icons/IconFlask";
+import { useToast } from "@/context/ToastContext";
 
 export const dynamic = "force-dynamic";
 
 export default function PesananReturPage() {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -135,7 +137,7 @@ export default function PesananReturPage() {
     if (currentStatus === newStatus) return;
 
     if (currentStatus === "COMPLETED" || currentStatus === "CANCELLED") {
-      alert("Pesanan yang sudah selesai atau batal tidak dapat diubah statusnya.");
+      showToast("Pesanan yang sudah selesai atau batal tidak dapat diubah statusnya.", "warning");
       return;
     }
 
@@ -157,9 +159,10 @@ export default function PesananReturPage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
       
+      showToast(`Status pesanan ${order.order_code} berhasil diubah ke ${newStatus}.`, "success");
       loadOrdersAndReturns();
     } catch (err: any) {
-      alert(err.message || "Gagal mengubah status pesanan.");
+      showToast(err.message || "Gagal mengubah status pesanan.", "danger");
     } finally {
       setLoading(false);
     }
@@ -182,9 +185,9 @@ export default function PesananReturPage() {
     setLoading(false);
 
     if (error) {
-      alert("Gagal mengajukan retur: " + error.message);
+      showToast("Gagal mengajukan retur: " + error.message, "danger");
     } else {
-      alert(`Retur ${qtyToReturn} unit diajukan untuk pesanan ${order.order_code}. Selesaikan inspeksi di menu 'Inspeksi Retur'.`);
+      showToast(`Retur ${qtyToReturn} unit diajukan untuk pesanan ${order.order_code}. Selesaikan inspeksi di menu 'Inspeksi Retur'.`, "success");
     }
     loadOrdersAndReturns();
   };
@@ -198,7 +201,7 @@ export default function PesananReturPage() {
     if (val === null) return;
     const qty = parseInt(val);
     if (isNaN(qty) || qty <= 0 || qty > order.qty) {
-      alert("Kuantitas retur tidak valid.");
+      showToast("Kuantitas retur tidak valid.", "warning");
       return;
     }
     await handleTriggerReturn(order, qty);
@@ -282,9 +285,13 @@ export default function PesananReturPage() {
   const handleClaimTiktok = async (retId: string) => {
     if (isReadOnly) return;
     setLoading(true);
-    await supabase.from("returns").update({ status: "CLAIMED", received_at: new Date().toISOString() }).eq("id", retId);
+    const { error } = await supabase.from("returns").update({ status: "CLAIMED", received_at: new Date().toISOString() }).eq("id", retId);
     setLoading(false);
-    alert("Klaim pengembalian TikTok berhasil diajukan.");
+    if (error) {
+      showToast("Gagal mengajukan klaim TikTok.", "danger");
+    } else {
+      showToast("Klaim pengembalian TikTok berhasil diajukan.", "success");
+    }
     loadOrdersAndReturns();
   };
 

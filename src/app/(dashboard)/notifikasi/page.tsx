@@ -5,9 +5,11 @@ import { useUser } from "@/context/UserContext";
 import { SectionCard, Tag, Button } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import type { Batch, ReturnItem, Product } from "@/types";
+import { useToast } from "@/context/ToastContext";
 
 export default function NotifikasiPage() {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -129,9 +131,13 @@ export default function NotifikasiPage() {
   const handleClaimTiktok = async (retId: string) => {
     if (isReadOnly) return;
     setLoading(true);
-    await supabase.from("returns").update({ status: "CLAIMED" }).eq("id", retId);
+    const { error } = await supabase.from("returns").update({ status: "CLAIMED" }).eq("id", retId);
     setLoading(false);
-    alert("Klaim retur TikTok berhasil ditandai sebagai claimed.");
+    if (error) {
+      showToast("Gagal menandai klaim retur TikTok.", "danger");
+    } else {
+      showToast("Klaim retur TikTok berhasil ditandai sebagai claimed.", "success");
+    }
     fetchNotifications();
   };
 

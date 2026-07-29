@@ -7,9 +7,11 @@ import { supabase } from "@/lib/supabase/client";
 import { writeLedgerEntry } from "@/lib/ledger";
 import { getReasonLabel } from "@/lib/labels";
 import type { Product, LedgerReason } from "@/types";
+import { useToast } from "@/context/ToastContext";
 
 export default function ManualPage() {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -69,25 +71,25 @@ export default function ManualPage() {
     setMasukSuccess("");
 
     if (isReadOnly) {
-      setMasukError("Peran Anda hanya memiliki hak baca.");
+      showToast("Peran Anda hanya memiliki hak baca.", "warning");
       return;
     }
     if (!masukProductId) {
-      setMasukError("Harap pilih produk.");
+      showToast("Harap pilih produk.", "warning");
       return;
     }
     if (!masukBatchCode.trim()) {
-      setMasukError("Harap isi Kode Batch.");
+      showToast("Harap isi Kode Batch.", "warning");
       return;
     }
     if (!masukExpiryDate) {
-      setMasukError("Harap isi Tanggal Kedaluwarsa.");
+      showToast("Harap isi Tanggal Kedaluwarsa.", "warning");
       return;
     }
 
     const qtyVal = parseInt(masukQty);
     if (isNaN(qtyVal) || qtyVal <= 0) {
-      setMasukError("Kuantitas harus berupa angka positif.");
+      showToast("Kuantitas harus berupa angka positif.", "warning");
       return;
     }
 
@@ -148,9 +150,9 @@ export default function ManualPage() {
           setMasukExpiryDate("");
           setMasukQty("");
           setMasukRef("");
-          setMasukSuccess(`Penerimaan barang masuk dicatat! (+${qtyVal} pcs pada batch ${targetBatch.batch_code})`);
+          showToast(`Penerimaan barang masuk dicatat! (+${qtyVal} pcs pada batch ${targetBatch.batch_code})`, "success");
         } catch (err: any) {
-          setMasukError(err.message || "Gagal mencatat barang masuk.");
+          showToast(err.message || "Gagal mencatat barang masuk.", "danger");
         } finally {
           setMasukLoading(false);
         }
@@ -165,24 +167,24 @@ export default function ManualPage() {
     setKeluarSuccess("");
 
     if (isReadOnly) {
-      setKeluarError("Peran Anda hanya memiliki hak baca.");
+      showToast("Peran Anda hanya memiliki hak baca.", "warning");
       return;
     }
     if (!keluarProductId) {
-      setKeluarError("Harap pilih produk.");
+      showToast("Harap pilih produk.", "warning");
       return;
     }
 
     const qtyVal = parseInt(keluarQty);
     if (isNaN(qtyVal) || qtyVal <= 0) {
-      setKeluarError("Kuantitas harus berupa angka positif.");
+      showToast("Kuantitas harus berupa angka positif.", "warning");
       return;
     }
 
     // WAJIB referensi khusus jika alasan bonus / promo
     const isCampaignReason = keluarReason === "bonus" || keluarReason === "promo";
     if (isCampaignReason && !keluarRef.trim()) {
-      setKeluarError("Nomor referensi / nama campaign wajib diisi untuk alasan Bonus atau Promo.");
+      showToast("Nomor referensi / nama campaign wajib diisi untuk alasan Bonus atau Promo.", "warning");
       return;
     }
 
@@ -190,7 +192,7 @@ export default function ManualPage() {
       const { data: cacheData } = await supabase.from("product_stocks_cache").select("total_stock").eq("product_id", keluarProductId).single();
       const currentStock = cacheData?.total_stock ?? 0;
       if (currentStock < qtyVal) {
-        setKeluarError(`Stok tidak mencukupi. Stok saat ini: ${currentStock} pcs, diminta: ${qtyVal} pcs.`);
+        showToast(`Stok tidak mencukupi. Stok saat ini: ${currentStock} pcs, diminta: ${qtyVal} pcs.`, "danger");
         return;
       }
 
@@ -231,16 +233,16 @@ export default function ManualPage() {
             setKeluarReason("bonus");
             setKeluarStock(null);
 
-            setKeluarSuccess(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs via FEFO.`);
+            showToast(`Barang keluar berhasil dicatat! Total -${qtyVal} pcs via FEFO.`, "success");
           } catch (err: any) {
-            setKeluarError(err.message || "Gagal memotong stok.");
+            showToast(err.message || "Gagal memotong stok.", "danger");
           } finally {
             setKeluarLoading(false);
           }
         }
       });
     } catch (err: any) {
-      setKeluarError("Gagal memeriksa ketersediaan stok.");
+      showToast("Gagal memeriksa ketersediaan stok.", "danger");
     }
   };
 
@@ -270,16 +272,6 @@ export default function ManualPage() {
         {/* Panel 1: Barang Masuk (Maklon) */}
         <SectionCard title="Input Penerimaan Barang Masuk (Maklon)">
           <form onSubmit={handleMasukSubmit} className="space-y-4">
-            {masukError && (
-              <div className="p-3 bg-danger-bg text-danger text-xs rounded border border-danger/30 font-semibold font-mono">
-                {masukError}
-              </div>
-            )}
-            {masukSuccess && (
-              <div className="p-3 bg-success-bg text-success text-xs rounded border border-success/30 font-semibold">
-                {masukSuccess}
-              </div>
-            )}
 
             <Select
               label="Pilih Produk"
@@ -343,16 +335,6 @@ export default function ManualPage() {
         {/* Panel 2: Barang Keluar Manual */}
         <SectionCard title="Input Pengeluaran Stok Manual">
           <form onSubmit={handleKeluarSubmit} className="space-y-4">
-            {keluarError && (
-              <div className="p-3 bg-danger-bg text-danger text-xs rounded border border-danger/30 font-semibold font-mono">
-                {keluarError}
-              </div>
-            )}
-            {keluarSuccess && (
-              <div className="p-3 bg-success-bg text-success text-xs rounded border border-success/30 font-semibold">
-                {keluarSuccess}
-              </div>
-            )}
 
             <Select
               label="Pilih Produk"
@@ -462,8 +444,9 @@ export default function ManualPage() {
                 Batal
               </Button>
               <Button variant="primary" disabled={keluarLoading || masukLoading} onClick={async () => {
-                await confirmData.action();
+                const actionFn = confirmData.action;
                 setConfirmData(null);
+                await actionFn();
               }}>
                 {keluarLoading || masukLoading ? "Menyimpan..." : "Konfirmasi & Komit"}
               </Button>

@@ -8,6 +8,7 @@ import { exportToXlsx } from "@/lib/export";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { Product, Bundle, BundleComponent } from "@/types";
 import Link from "next/link";
+import { useToast } from "@/context/ToastContext";
 
 interface ProdukClientProps {
   serverProducts: any[];
@@ -18,6 +19,7 @@ interface ProdukClientProps {
 
 export function ProdukClient({ serverProducts, serverBundles, serverBundleComponents, serverPendingOrders }: ProdukClientProps) {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isAdmin = true;
 
   const [activeTab, setActiveTab] = useState<"produk" | "bundle" | "config">("produk");
@@ -183,7 +185,7 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
 
   const handleSaveConfig = () => {
     localStorage.setItem("stokledger_expiry_threshold", expiryThreshold.toString());
-    alert("Konfigurasi tersimpan.");
+    showToast("Konfigurasi notifikasi berhasil disimpan.", "success");
   };
 
   const handleExportProduk = async () => {

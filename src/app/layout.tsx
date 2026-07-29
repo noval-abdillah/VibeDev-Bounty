@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { UserProvider } from "@/context/UserContext";
+import { ToastProvider } from "@/context/ToastContext";
+import { ToastContainer } from "@/components/ui/ToastContainer";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -76,7 +78,12 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen text-ink font-body bg-bg">
-        <UserProvider>{children}</UserProvider>
+        <UserProvider>
+          <ToastProvider>
+            {children}
+            <ToastContainer />
+          </ToastProvider>
+        </UserProvider>
       </body>
     </html>
   );

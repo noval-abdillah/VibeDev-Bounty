@@ -5,6 +5,7 @@ import { useUser } from "@/context/UserContext";
 import { SectionCard, Input, Select, Button, Tag, Alert } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import type { Product } from "@/types";
+import { useToast } from "@/context/ToastContext";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ interface PromoFreeItem {
 
 export default function PromoPage() {
   const { user } = useUser();
+  const { showToast } = useToast();
   const isAdmin = true;
   const isReadOnly = false;
 
@@ -107,31 +109,31 @@ export default function PromoPage() {
     setSuccess("");
 
     if (isReadOnly) {
-      setError("Peran Anda hanya memiliki hak baca.");
+      showToast("Peran Anda hanya memiliki hak baca.", "warning");
       return;
     }
     if (!isAdmin) {
-      setError("Hanya peran Admin/Config yang bisa menambahkan aturan promo.");
+      showToast("Hanya peran Admin/Config yang bisa menambahkan aturan promo.", "warning");
       return;
     }
 
     if (!promoName.trim()) {
-      setError("Nama promo wajib diisi.");
+      showToast("Nama promo wajib diisi.", "warning");
       return;
     }
     if (!buyProductId) {
-      setError("Harap pilih produk pembelian.");
+      showToast("Harap pilih produk pembelian.", "warning");
       return;
     }
 
     const minBuy = parseInt(minBuyQty);
     if (isNaN(minBuy) || minBuy <= 0) {
-      setError("Minimal beli harus berupa angka positif.");
+      showToast("Minimal beli harus berupa angka positif.", "warning");
       return;
     }
 
     if (!startDate || !endDate) {
-      setError("Tanggal berlaku mulai & selesai wajib diisi.");
+      showToast("Tanggal berlaku mulai & selesai wajib diisi.", "warning");
       return;
     }
 
@@ -140,13 +142,13 @@ export default function PromoPage() {
     if (channelTiktok) channels.push("tiktok");
 
     if (channels.length === 0) {
-      setError("Pilih minimal satu channel marketplace.");
+      showToast("Pilih minimal satu channel marketplace.", "warning");
       return;
     }
 
     const validFreeItems = newFreeItems.filter(item => item.product_id !== "");
     if (validFreeItems.length === 0) {
-      setError("Pilih minimal satu barang gratis.");
+      showToast("Pilih minimal satu barang gratis.", "warning");
       return;
     }
 
@@ -208,10 +210,10 @@ export default function PromoPage() {
           setStartDate(`${yyyy}-${mm}-${dd}T00:00`);
           setEndDate(`${yyyy}-${mm}-${dd}T23:59`);
 
-          setSuccess("Aturan promo baru berhasil disimpan.");
+          showToast("Aturan promo baru berhasil disimpan.", "success");
           fetchData();
         } catch (err: any) {
-          setError(err.message || "Gagal menyimpan aturan promo.");
+          showToast(err.message || "Gagal menyimpan aturan promo.", "danger");
         } finally {
           setLoading(false);
         }
@@ -227,8 +229,9 @@ export default function PromoPage() {
       .eq("id", id);
 
     if (error) {
-      alert("Gagal mengubah status aturan: " + error.message);
+      showToast("Gagal mengubah status aturan: " + error.message, "danger");
     } else {
+      showToast("Status aturan promo berhasil diperbarui.", "success");
       fetchData();
     }
   };
