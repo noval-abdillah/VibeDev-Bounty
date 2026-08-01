@@ -3,9 +3,51 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+async function getAuthenticatedUser(request: Request, admin: any) {
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    const cookies = Object.fromEntries(
+      cookieHeader.split(";").map(c => c.trim().split("="))
+    );
+    const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.split("//")?.[1]?.split(".")?.[0] || "";
+    const tokenKey = `sb-${projectRef}-auth-token`;
+    const tokenVal = cookies[tokenKey];
+    if (!tokenVal) return null;
+
+    let accessToken = "";
+    try {
+      const parsedToken = JSON.parse(decodeURIComponent(tokenVal));
+      accessToken = parsedToken.access_token || "";
+    } catch {
+      accessToken = decodeURIComponent(tokenVal);
+    }
+    if (!accessToken) return null;
+
+    const { data: { user }, error } = await admin.auth.getUser(accessToken);
+    if (error || !user) return null;
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    return { ...user, role: profile?.role || "gudang" };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const admin = createAdminClient();
+    
+    // API Auth check
+    const user = await getAuthenticatedUser(request, admin);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { action, payload } = body;
 
@@ -70,25 +112,29 @@ export async function POST(request: Request) {
 
               if (freeItems && freeItems.length > 0) {
                 for (const item of freeItems) {
-                  await admin.rpc("process_order_fefo", {
+                  const { error: promoFefoError } = await admin.rpc("process_order_fefo", {
                     p_product_id: item.product_id,
                     p_qty: item.qty,
                     p_reason: "promo",
                     p_channel: order.channel,
                     p_ref_id: `PROMO-${order.order_code}`,
                   });
+                  if (promoFefoError) throw promoFefoError;
                 }
               }
             }
-          } catch (promoErr) {
+          } catch (promoErr: any) {
             console.error("Failed to automatically apply promo rules:", promoErr);
+            throw new Error("Gagal menerapkan promo otomatis: " + promoErr.message);
           }
         }
 
-        await admin.from("orders").update({
+        const { error: updateErr } = await admin.from("orders").update({
           status: new_status,
           resolved_components: components,
         }).eq("id", order_id);
+        
+        if (updateErr) throw updateErr;
 
       } else if (new_status === "CANCELLED" && (order.status === "SHIPPED" || order.status === "IN_TRANSIT")) {
         const cancelQty = payload.cancel_qty || null;
@@ -100,7 +146,8 @@ export async function POST(request: Request) {
         });
         if (cancelError) throw cancelError;
       } else {
-        await admin.from("orders").update({ status: new_status }).eq("id", order_id);
+        const { error: updateErr } = await admin.from("orders").update({ status: new_status }).eq("id", order_id);
+        if (updateErr) throw updateErr;
       }
 
       return NextResponse.json({ success: true });

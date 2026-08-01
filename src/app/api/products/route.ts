@@ -3,16 +3,62 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+async function getAuthenticatedUser(request: Request, admin: any) {
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    const cookies = Object.fromEntries(
+      cookieHeader.split(";").map(c => c.trim().split("="))
+    );
+    const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.split("//")?.[1]?.split(".")?.[0] || "";
+    const tokenKey = `sb-${projectRef}-auth-token`;
+    const tokenVal = cookies[tokenKey];
+    if (!tokenVal) return null;
+
+    let accessToken = "";
+    try {
+      const parsedToken = JSON.parse(decodeURIComponent(tokenVal));
+      accessToken = parsedToken.access_token || "";
+    } catch {
+      accessToken = decodeURIComponent(tokenVal);
+    }
+    if (!accessToken) return null;
+
+    const { data: { user }, error } = await admin.auth.getUser(accessToken);
+    if (error || !user) return null;
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    return { ...user, role: profile?.role || "gudang" };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const admin = createAdminClient();
+    
+    // API Auth check
+    const user = await getAuthenticatedUser(request, admin);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Role check: Only admin/config can edit product catalog
+    if (user.role === "gudang" || user.role === "owner") {
+      return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
+    }
+
     const body = await request.json();
     const { action, payload } = body;
 
     if (action === "check_sku_locked") {
       const { product_id } = payload;
       
-      // 1. Check if has batches
       const { data: batches, error: batchErr } = await admin
         .from("batches")
         .select("id")
@@ -25,7 +71,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ locked: true, reason: "Produk sudah memiliki data batch terdaftar." });
       }
 
-      // 2. Check if has ledger entries
       const { data: ledger, error: ledgerErr } = await admin
         .from("stock_ledger")
         .select("id")
@@ -44,7 +89,6 @@ export async function POST(request: Request) {
     if (action === "update_product") {
       const { product_id, name, sku, image_url } = payload;
 
-      // 1. Check if SKU is changed
       const { data: existingProd, error: prodErr } = await admin
         .from("products")
         .select("sku")
@@ -56,18 +100,19 @@ export async function POST(request: Request) {
       const isSkuChanged = existingProd.sku.toUpperCase() !== sku.toUpperCase();
 
       if (isSkuChanged) {
-        // Enforce lock check on backend
-        const { data: batches } = await admin
+        const { data: batches, error: bErr } = await admin
           .from("batches")
           .select("id")
           .eq("product_id", product_id)
           .limit(1);
+        if (bErr) throw bErr;
 
-        const { data: ledger } = await admin
+        const { data: ledger, error: lErr } = await admin
           .from("stock_ledger")
           .select("id")
           .eq("product_id", product_id)
           .limit(1);
+        if (lErr) throw lErr;
 
         if ((batches && batches.length > 0) || (ledger && ledger.length > 0)) {
           return NextResponse.json(
@@ -76,13 +121,13 @@ export async function POST(request: Request) {
           );
         }
 
-        // Validate SKU uniqueness
-        const { data: duplicateProd } = await admin
+        const { data: duplicateProd, error: dErr } = await admin
           .from("products")
           .select("id")
           .eq("sku", sku.toUpperCase())
           .neq("id", product_id)
           .limit(1);
+        if (dErr) throw dErr;
 
         if (duplicateProd && duplicateProd.length > 0) {
           return NextResponse.json(
@@ -92,13 +137,12 @@ export async function POST(request: Request) {
         }
       }
 
-      // 2. Update product
       const { error: updateErr } = await admin
         .from("products")
         .update({
           name,
           sku: sku.toUpperCase(),
-          image_url: image_url
+          image_url: image_url !== undefined ? image_url : null
         })
         .eq("id", product_id);
 

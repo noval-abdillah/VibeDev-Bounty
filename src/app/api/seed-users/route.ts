@@ -4,8 +4,13 @@ import { TEST_USERS } from "@/constants/users";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Only allow seeding in development mode
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Forbidden: Seeding disabled in production." }, { status: 403 });
+    }
+
     const admin = createAdminClient();
     const results = [];
 

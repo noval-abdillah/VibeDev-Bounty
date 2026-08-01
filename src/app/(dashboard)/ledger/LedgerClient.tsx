@@ -82,8 +82,11 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
     return true;
   });
 
+  const [isReversing, setIsReversing] = useState(false);
+
   const executeReversal = async () => {
-    if (!reversalData) return;
+    if (!reversalData || isReversing) return;
+    setIsReversing(true);
     try {
       const ref = `REVERSAL-${reversalData.reference_id || Date.now().toString().slice(-6)}`;
       const result = await writeLedgerEntry(
@@ -106,6 +109,8 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
       }
     } catch (err: any) {
       showToast("Gagal mencatat koreksi: " + err.message, "danger");
+    } finally {
+      setIsReversing(false);
     }
   };
 
@@ -424,11 +429,11 @@ export function LedgerClient({ serverProducts, serverBatches, serverLedger }: Le
             </div>
 
             <div className="flex justify-end gap-3 pt-2 border-t border-border">
-              <Button variant="ghost" onClick={() => setReversalData(null)}>
+              <Button variant="ghost" disabled={isReversing} onClick={() => setReversalData(null)}>
                 Batal
               </Button>
-              <Button variant="primary" onClick={executeReversal}>
-                Konfirmasi &amp; Koreksi
+              <Button variant="primary" disabled={isReversing} onClick={executeReversal}>
+                {isReversing ? "Memproses..." : "Konfirmasi & Koreksi"}
               </Button>
             </div>
           </div>

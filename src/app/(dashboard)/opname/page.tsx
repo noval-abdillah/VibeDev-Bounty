@@ -12,11 +12,12 @@ import { useToast } from "@/context/ToastContext";
 export default function StokOpnamePage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = false;
+  const isReadOnly = user?.role === "owner" || user?.role === "gudang"; // Only Admin/Config can write opname corrections
 
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [sessions, setSessions] = useState<OpnameSession[]>([]);
+  const [batchStocksMap, setBatchStocksMap] = useState<Record<string, number>>({});
   
   // Active draft session
   const [activeSession, setActiveSession] = useState<OpnameSession | null>(null);
@@ -42,9 +43,14 @@ export default function StokOpnamePage() {
   const fetchData = async () => {
     const { data: prods } = await supabase.from("products").select("*").eq("is_active", true);
     const { data: bts } = await supabase.from("batches").select("*");
+    const { data: batchCache } = await supabase.from("batch_stocks_cache").select("batch_id, batch_stock");
     
     if (prods) setProducts(prods);
     if (bts) setBatches(bts);
+    
+    const stocksMap: Record<string, number> = {};
+    (batchCache || []).forEach((bc: any) => { stocksMap[bc.batch_id] = bc.batch_stock; });
+    setBatchStocksMap(stocksMap);
     
     await loadSessions();
   };
@@ -404,6 +410,7 @@ export default function StokOpnamePage() {
                         physicalVal={physicalVal}
                         isReadOnly={isReadOnly || loading}
                         onInputChange={handleInputChange}
+                        systemStock={batchStocksMap[b.id] !== undefined ? batchStocksMap[b.id] : 0}
                       />
                     );
                   });
@@ -525,23 +532,14 @@ export default function StokOpnamePage() {
   );
 }
 
-function OpnameRow({ product, batch, physicalValStr, physicalVal, isReadOnly, onInputChange }: any) {
-  const [sysVal, setSysVal] = useState<number | null>(null);
-
-  useEffect(() => {
-    supabase.from("batch_stocks_cache").select("batch_stock").eq("batch_id", batch.id).single().then(({ data }) => {
-      setSysVal(data?.batch_stock ?? 0);
-    });
-  }, [product.id, batch.id]);
-
-  if (sysVal === null) return null;
-  const diff = physicalVal - sysVal;
+function OpnameRow({ product, batch, physicalValStr, physicalVal, isReadOnly, onInputChange, systemStock }: any) {
+  const diff = physicalVal - systemStock;
 
   return (
     <tr className="hover:bg-bg/10 transition-colors">
       <td className="py-2.5 px-3 font-body font-semibold text-ink">{product.name}</td>
       <td className="py-2.5 px-3 font-semibold text-primary">{batch.batch_code}</td>
-      <td className="py-2.5 px-3 text-right font-bold">{sysVal}</td>
+      <td className="py-2.5 px-3 text-right font-bold">{systemStock}</td>
       <td className="py-2.5 px-3 text-center">
         <input
           type="number"

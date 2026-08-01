@@ -41,10 +41,11 @@ export function DashboardClient({
   const [worklist, setWorklist] = useState<any[]>([]);
 
   useEffect(() => {
-    // Expiry warnings (expiry date within 30 days)
+    // Expiry warnings (expiry date within configured threshold)
+    const thresholdDays = parseInt(localStorage.getItem("stokledger_expiry_threshold") || "30");
     const today = new Date();
-    const thirtyDaysFromNow = new Date();
-    thirtyDaysFromNow.setDate(today.getDate() + 30);
+    const expiryTargetDate = new Date();
+    expiryTargetDate.setDate(today.getDate() + thresholdDays);
 
     let warningCount = 0;
     const activeExpiryList: any[] = [];
@@ -58,7 +59,7 @@ export function DashboardClient({
         .reduce((sum: number, e: any) => sum + e.qty, 0);
 
       if (batchStock > 0) {
-        if (diffDays <= 30) {
+        if (diffDays <= thresholdDays) {
           warningCount++;
           activeExpiryList.push({
             batchCode: b.batch_code,

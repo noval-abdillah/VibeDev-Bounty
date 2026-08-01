@@ -30,8 +30,8 @@ interface PromoFreeItem {
 export default function PromoPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isAdmin = true;
-  const isReadOnly = false;
+  const isAdmin = user?.role === "admin" || user?.role === "owner";
+  const isReadOnly = user?.role === "gudang";
 
   const [products, setProducts] = useState<Product[]>([]);
   const [promoRules, setPromoRules] = useState<PromoRule[]>([]);

@@ -1,6 +1,7 @@
 export type UserRole = "gudang" | "owner" | "admin";
 
 export interface UserProfile {
+  id?: string;
   email: string;
   role: UserRole;
   name: string;

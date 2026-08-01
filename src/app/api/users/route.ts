@@ -3,9 +3,56 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getAuthenticatedUser(request: Request, admin: any) {
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    const cookies = Object.fromEntries(
+      cookieHeader.split(";").map(c => c.trim().split("="))
+    );
+    const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.split("//")?.[1]?.split(".")?.[0] || "";
+    const tokenKey = `sb-${projectRef}-auth-token`;
+    const tokenVal = cookies[tokenKey];
+    if (!tokenVal) return null;
+
+    let accessToken = "";
+    try {
+      const parsedToken = JSON.parse(decodeURIComponent(tokenVal));
+      accessToken = parsedToken.access_token || "";
+    } catch {
+      accessToken = decodeURIComponent(tokenVal);
+    }
+    if (!accessToken) return null;
+
+    const { data: { user }, error } = await admin.auth.getUser(accessToken);
+    if (error || !user) return null;
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    return { ...user, role: profile?.role || "gudang" };
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(request: Request) {
   try {
     const admin = createAdminClient();
+    
+    // Auth check
+    const user = await getAuthenticatedUser(request, admin);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Role check: Only Owner can view all members
+    if (user.role !== "owner") {
+      return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
+    }
+
     const { data: profiles, error } = await admin
       .from("profiles")
       .select("*")
@@ -23,14 +70,25 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const admin = createAdminClient();
+    
+    // Auth check
+    const user = await getAuthenticatedUser(request, admin);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Role check: Only Owner can create members
+    if (user.role !== "owner") {
+      return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
+    }
+
     const body = await request.json();
     const { email, password, name, role } = body;
 
     if (!email || !password || !name || !role) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
-
-    const admin = createAdminClient();
 
     // 1. Create user in auth.users
     const { data: authData, error: authError } = await admin.auth.admin.createUser({

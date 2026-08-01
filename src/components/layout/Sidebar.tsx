@@ -62,7 +62,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         {/* User Info */}
         <div className="px-6 py-4 border-b border-sidebar-soft/10 bg-black/20">
           <div className="font-heading text-xs font-semibold text-white truncate">{user.name}</div>
-          <div className="text-[10px] text-sidebar-soft/80 capitalize font-mono mt-0.5">Admin</div>
+          <div className="text-[10px] text-sidebar-soft/80 capitalize font-mono mt-0.5">{user.role}</div>
         </div>
 
         {/* Navigation */}

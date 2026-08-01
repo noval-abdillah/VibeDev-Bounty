@@ -48,6 +48,34 @@ function RekonsiliasiContent() {
     batchId: string;
   }[]>([]);
 
+  const handleExpandItem = React.useCallback(async (productId: string, batchId: string, itemKey: string) => {
+    if (expandedItem === itemKey) {
+      setExpandedItem(null);
+      setExpandedLedger([]);
+    } else {
+      let cutoffTime = new Date().toISOString();
+      if (activeTab === "opname" && selectedSessionId) {
+        const activeSess = opnameSessions.find((s) => s.id === selectedSessionId);
+        if (activeSess?.completed_at) {
+          cutoffTime = activeSess.completed_at;
+        }
+      }
+
+      // Query from Supabase Ledger up to cutoff
+      const { data: history } = await supabase
+        .from("stock_ledger")
+        .select("*")
+        .eq("product_id", productId)
+        .lte("created_at", cutoffTime)
+        .order("created_at", { ascending: false });
+
+      if (history) {
+        setExpandedLedger(history as LedgerEntry[]);
+      }
+      setExpandedItem(itemKey);
+    }
+  }, [expandedItem, activeTab, selectedSessionId, opnameSessions]);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -108,12 +136,12 @@ function RekonsiliasiContent() {
         }
       }
     }
-  }, [highlightProdId, products, harianDiscrepancies, opnameDiscrepancies]);
+  }, [highlightProdId, products, harianDiscrepancies, opnameDiscrepancies, handleExpandItem]);
 
   const calculateDailyDiscrepancies = async (allProducts: Product[], allBatches: Batch[]) => {
     const [ordersResult, ledgerResult, bundlesResult, compsResult] = await Promise.all([
-      supabase.from("orders").select("*").neq("status", "PENDING").neq("status", "CANCELLED").order("created_at", { ascending: false }).limit(100),
-      supabase.from("stock_ledger").select("*").lt("qty", 0).order("created_at", { ascending: false }).limit(500),
+      supabase.from("orders").select("*").neq("status", "PENDING").neq("status", "CANCELLED").order("created_at", { ascending: false }),
+      supabase.from("stock_ledger").select("*").lt("qty", 0).order("created_at", { ascending: false }),
       supabase.from("bundles").select("*"),
       supabase.from("bundle_components").select("*"),
     ]);
@@ -167,35 +195,7 @@ function RekonsiliasiContent() {
     setHarianDiscrepancies(diffs);
   };
 
-  const handleExpandItem = async (productId: string, batchId: string, itemKey: string) => {
-    if (expandedItem === itemKey) {
-      setExpandedItem(null);
-      setExpandedLedger([]);
-    } else {
-      let cutoffTime = new Date().toISOString();
-      if (activeTab === "opname" && selectedSessionId) {
-        const activeSess = opnameSessions.find((s) => s.id === selectedSessionId);
-        if (activeSess?.completed_at) {
-          cutoffTime = activeSess.completed_at;
-        }
-      }
-
-      // Query from Supabase Ledger up to cutoff
-      const { data: history } = await supabase
-        .from("stock_ledger")
-        .select("*")
-        .eq("product_id", productId)
-        .lte("created_at", cutoffTime)
-        .order("created_at", { ascending: false });
-
-      if (history) {
-        const filteredHistory = batchId ? history.filter((e) => e.batch_id === batchId) : history;
-        setExpandedItem(itemKey);
-        setExpandedLedger(filteredHistory);
-      }
-    }
-  };
-
+// Removed duplicated handleExpandItem declaration below
   const handleExportOpnameSelisih = async () => {
     const now = new Date();
     const today = now.toISOString().split("T")[0];

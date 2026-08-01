@@ -27,6 +27,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
       if (data && !error) {
         setUser({
+          id: userId,
           email,
           role: data.role as UserRole,
           name: data.name,

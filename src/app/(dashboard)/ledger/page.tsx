@@ -9,7 +9,7 @@ export default async function LedgerPage() {
   const [prodsResult, btsResult, ledgerResult] = await Promise.all([
     supabase.from("products").select("id, name, sku"),
     supabase.from("batches").select("id, batch_code"),
-    supabase.from("stock_ledger").select("*").order("created_at", { ascending: false }).limit(100),
+    supabase.from("stock_ledger").select("*").order("created_at", { ascending: false }),
   ]);
 
   const products = prodsResult.data || [];

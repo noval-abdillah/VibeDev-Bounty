@@ -10,7 +10,7 @@ import { useToast } from "@/context/ToastContext";
 export default function NotifikasiPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = false;
+  const isReadOnly = user?.role === "owner"; // Owner is read-only
 
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);

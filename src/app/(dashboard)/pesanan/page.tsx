@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default function PesananReturPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = false;
+  const isReadOnly = user?.role === "owner"; // Owner is read-only for simulations
 
   const [products, setProducts] = useState<Product[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
@@ -196,15 +196,26 @@ export default function PesananReturPage() {
     await handleTriggerReturn(order, order.qty);
   };
 
-  const handleReturSebagian = async (order: Order) => {
-    const val = prompt(`Masukkan kuantitas barang retur (Maksimal ${order.qty} unit):`);
-    if (val === null) return;
-    const qty = parseInt(val);
-    if (isNaN(qty) || qty <= 0 || qty > order.qty) {
+  const [partialReturnOrder, setPartialReturnOrder] = useState<Order | null>(null);
+  const [partialReturnQty, setPartialReturnQty] = useState("1");
+
+  const handleReturSebagianSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!partialReturnOrder) return;
+    const qty = parseInt(partialReturnQty);
+    if (isNaN(qty) || qty <= 0 || qty > partialReturnOrder.qty) {
       showToast("Kuantitas retur tidak valid.", "warning");
       return;
     }
-    await handleTriggerReturn(order, qty);
+    const orderToProcess = partialReturnOrder;
+    setPartialReturnOrder(null);
+    setPartialReturnQty("1");
+    await handleTriggerReturn(orderToProcess, qty);
+  };
+
+  const handleReturSebagian = (order: Order) => {
+    setPartialReturnQty("1");
+    setPartialReturnOrder(order);
   };
 
   const handleImportCsv = async (e: React.FormEvent) => {
@@ -547,6 +558,39 @@ export default function PesananReturPage() {
               </Button>
             </form>
           </SectionCard>
+        </div>
+      )}
+
+      {/* Partial Return Modal Overlay (Synchronous prompt replacement) */}
+      {partialReturnOrder && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+          <form onSubmit={handleReturSebagianSubmit} className="bg-white border-2 border-primary max-w-sm w-full rounded-md p-6 space-y-4 shadow-xl">
+            <h3 className="font-heading text-lg font-bold text-ink border-b border-border pb-2">
+              Pengajuan Retur Sebagian
+            </h3>
+            <p className="text-xs text-ink-soft">
+              Masukkan kuantitas produk yang ingin diretur dari total <strong>{partialReturnOrder.qty}</strong> unit:
+            </p>
+            
+            <Input 
+              label="Kuantitas Retur"
+              type="number"
+              min="1"
+              max={partialReturnOrder.qty}
+              value={partialReturnQty}
+              onChange={(e) => setPartialReturnQty(e.target.value)}
+              required
+            />
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <Button variant="ghost" type="button" onClick={() => setPartialReturnOrder(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" type="submit">
+                Ajukan Retur
+              </Button>
+            </div>
+          </form>
         </div>
       )}
     </div>

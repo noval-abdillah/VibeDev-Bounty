@@ -12,7 +12,7 @@ import { useToast } from "@/context/ToastContext";
 export default function ManualPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = false;
+  const isReadOnly = user?.role === "owner"; // Owner is read-only for ledger modification
 
   const [products, setProducts] = useState<Product[]>([]);
   
@@ -160,7 +160,6 @@ export default function ManualPage() {
     });
   };
 
-  // 2. Handle Barang Keluar Manual Submit (Friction confirmation first)
   const handleKeluarSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setKeluarError("");
@@ -196,11 +195,12 @@ export default function ManualPage() {
         return;
       }
 
+      const resolvedReason = getReasonLabel(keluarReason);
       setConfirmData({
         type: "keluar",
         productName: products.find(p => p.id === keluarProductId)?.name || "Produk",
         qty: qtyVal,
-        reason: getReasonLabel(keluarReason),
+        reason: resolvedReason,
         channel: "Manual",
         dampak: `Stok fisik & aman dijual berkurang (-${qtyVal} unit)`,
         action: async () => {
@@ -246,17 +246,7 @@ export default function ManualPage() {
     }
   };
 
-  const getReasonLabel = (reason: string) => {
-    switch (reason) {
-      case "bonus": return "Bonus (Hadiah Pelanggan)";
-      case "promo": return "Promo Kampanye";
-      case "sampel": return "Sampel Review / R&D";
-      case "penjualan_offline": return "Penjualan Offline";
-      case "rusak": return "Barang Rusak / Cacat Fisik";
-      case "kedaluwarsa": return "Barang Kedaluwarsa";
-      default: return reason;
-    }
-  };
+// getReasonLabel is imported directly from @/lib/labels
 
   return (
     <div className="space-y-6">
