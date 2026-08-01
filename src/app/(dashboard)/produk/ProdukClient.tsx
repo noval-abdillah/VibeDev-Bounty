@@ -222,17 +222,9 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
         // Refresh
         const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
         if (prods) {
-          setProducts(prods.map((p: any) => ({
-            id: p.product_id,
-            name: p.name,
-            sku: p.sku,
-            image_url: p.image_url || null,
-            is_active: p.is_active,
-            created_at: p.created_at
-          })));
-          const stocks: Record<string, number> = {};
-          prods.forEach((p: any) => { stocks[p.product_id] = p.total_stock; });
-          setProductStocks(stocks);
+          setProducts(normalizeProducts(prods));
+          setProductStocks(computeStocks(prods));
+          setProductReservations(computeReservations(prods, serverPendingOrders, serverBundles, serverBundleComponents));
         }
       } catch (err: any) {
         let msg = "Terjadi kesalahan saat menyimpan produk. Silakan coba lagi.";
@@ -340,17 +332,9 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
       // Refresh
       const { data: prods } = await supabase.from("product_stock_summary").select("*").order("name", { ascending: true });
       if (prods) {
-        setProducts(prods.map((p: any) => ({
-          id: p.product_id,
-          name: p.name,
-          sku: p.sku,
-          image_url: p.image_url || null,
-          is_active: p.is_active,
-          created_at: p.created_at
-        })));
-        const stocks: Record<string, number> = {};
-        prods.forEach((p: any) => { stocks[p.product_id] = p.total_stock; });
-        setProductStocks(stocks);
+        setProducts(normalizeProducts(prods));
+        setProductStocks(computeStocks(prods));
+        setProductReservations(computeReservations(prods, serverPendingOrders, serverBundles, serverBundleComponents));
       }
     } catch (err: any) {
       let msg = "Terjadi kesalahan saat menyimpan produk. Silakan coba lagi.";
