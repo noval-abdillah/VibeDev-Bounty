@@ -12,7 +12,7 @@ import { useToast } from "@/context/ToastContext";
 export default function ManualPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = false;
+  const isReadOnly = user?.role === "owner"; // Owner is read-only for ledger modification
 
   const [products, setProducts] = useState<Product[]>([]);
   

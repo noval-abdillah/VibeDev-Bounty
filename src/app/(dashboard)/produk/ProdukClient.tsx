@@ -22,8 +22,8 @@ interface ProdukClientProps {
 export function ProdukClient({ serverProducts, serverBundles, serverBundleComponents, serverPendingOrders }: ProdukClientProps) {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isAdmin = true;
-  const isReadOnly = false;
+  const isAdmin = user?.role === "admin"; // Only admin can modify products
+  const isReadOnly = user?.role === "owner" || user?.role === "gudang";
 
   // Helper helper to normalize incoming products consistently
   const normalizeProducts = (rawProducts: any[]) => {

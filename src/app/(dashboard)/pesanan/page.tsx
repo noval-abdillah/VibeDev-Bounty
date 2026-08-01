@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default function PesananReturPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = false;
+  const isReadOnly = user?.role === "owner"; // Owner is read-only for simulations
 
   const [products, setProducts] = useState<Product[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
