@@ -12,7 +12,7 @@ import { useToast } from "@/context/ToastContext";
 export default function StokOpnamePage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = user?.role === "owner" || user?.role === "gudang"; // Only Admin/Config can write opname corrections
+  const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);

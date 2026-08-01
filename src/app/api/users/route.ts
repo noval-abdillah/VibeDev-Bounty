@@ -48,10 +48,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Role check: Only Owner can view all members
-    if (user.role !== "owner") {
-      return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
-    }
+    // Role restrictions removed - all roles are treated as Admin
 
     const { data: profiles, error } = await admin
       .from("profiles")
@@ -78,10 +75,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Role check: Only Owner can create members
-    if (user.role !== "owner") {
-      return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
-    }
+    // Role restrictions removed - all roles are treated as Admin
 
     const body = await request.json();
     const { email, password, name, role } = body;

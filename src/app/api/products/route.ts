@@ -48,10 +48,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Role check: Only admin/config can edit product catalog
-    if (user.role === "gudang" || user.role === "owner") {
-      return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
-    }
+    // All roles allowed to update/check products since owner/gudang role limits are removed
+    // Only Admin is used. All profiles will effectively act as Admin.
 
     const body = await request.json();
     const { action, payload } = body;

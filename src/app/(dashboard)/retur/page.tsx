@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default function ReturPage() {
   const { user } = useUser();
   const { showToast } = useToast();
-  const isReadOnly = user?.role === "owner"; // Owner cannot inspect return items
+  const isReadOnly = false;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [returns, setReturns] = useState<ReturnItem[]>([]);

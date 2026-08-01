@@ -87,10 +87,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "complete_opname") {
-      // Role enforcement: Gudang/Owner can't complete opname, must be Admin/Config
-      if (user.role === "owner" || user.role === "gudang") {
-        return NextResponse.json({ error: "Forbidden: role Anda tidak memiliki izin ini." }, { status: 403 });
-      }
+      // Gudang/Owner restrictions are removed, all authenticated users are treated as Admin
 
       const { session_id, corrections } = payload;
       const { error } = await admin.rpc("create_opname_corrections", {
