@@ -24,10 +24,57 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
   const { showToast } = useToast();
   const isAdmin = true;
 
+  // Helper helper to normalize incoming products consistently
+  const normalizeProducts = (rawProducts: any[]) => {
+    return rawProducts.map((p: any) => ({
+      id: p.product_id || p.id,
+      name: p.name,
+      sku: p.sku,
+      image_url: p.image_url || null,
+      is_active: p.is_active,
+      created_at: p.created_at
+    }));
+  };
+
+  // Helper helper to compute stocks map safely
+  const computeStocks = (rawProducts: any[]) => {
+    const stocks: Record<string, number> = {};
+    rawProducts.forEach((p: any) => {
+      const id = p.product_id || p.id;
+      stocks[id] = p.total_stock !== undefined ? p.total_stock : 0;
+    });
+    return stocks;
+  };
+
+  // Helper helper to compute reservations map safely
+  const computeReservations = (rawProducts: any[], pendingOrders: any[], bundlesList: any[], bundleComps: any[]) => {
+    const reservations: Record<string, number> = {};
+    rawProducts.forEach((p: any) => {
+      const id = p.product_id || p.id;
+      let resQty = 0;
+      pendingOrders.forEach((o: any) => {
+        if (o.sku.toUpperCase() === p.sku.toUpperCase()) {
+          resQty += o.qty;
+        } else {
+          const bundle = bundlesList.find((b: any) => b.sku.toUpperCase() === o.sku.toUpperCase());
+          if (bundle) {
+            const comps = (bundleComps as BundleComponent[]).filter((bc) => bc.bundle_id === bundle.id);
+            const matchedComp = comps.find((c) => c.product_id === id);
+            if (matchedComp) {
+              resQty += matchedComp.qty * o.qty;
+            }
+          }
+        }
+      });
+      reservations[id] = resQty;
+    });
+    return reservations;
+  };
+
   const [activeTab, setActiveTab] = useState<"produk" | "bundle" | "config">("produk");
-  const [products, setProducts] = useState<any[]>(serverProducts);
-  const [productStocks, setProductStocks] = useState<Record<string, number>>({});
-  const [productReservations, setProductReservations] = useState<Record<string, number>>({});
+  const [products, setProducts] = useState<any[]>(() => normalizeProducts(serverProducts));
+  const [productStocks, setProductStocks] = useState<Record<string, number>>(() => computeStocks(serverProducts));
+  const [productReservations, setProductReservations] = useState<Record<string, number>>(() => computeReservations(serverProducts, serverPendingOrders, serverBundles, serverBundleComponents));
   const [bundles, setBundles] = useState<Bundle[]>(serverBundles);
   const [bundleComponents, setBundleComponents] = useState<BundleComponent[]>(serverBundleComponents as BundleComponent[]);
   
@@ -60,51 +107,14 @@ export function ProdukClient({ serverProducts, serverBundles, serverBundleCompon
   const [expiryThreshold, setExpiryThreshold] = useState(30);
 
   useEffect(() => {
-    // Compute reservations
-    const reservations: Record<string, number> = {};
+    // Keep internal states synced when serverProducts or dependency props update
+    setProducts(normalizeProducts(serverProducts));
+    setProductStocks(computeStocks(serverProducts));
+    setProductReservations(computeReservations(serverProducts, serverPendingOrders, serverBundles, serverBundleComponents));
     
-    serverProducts.forEach((p: any) => {
-      let resQty = 0;
-      serverPendingOrders.forEach((o: any) => {
-        // If single product SKU matches
-        if (o.sku.toUpperCase() === p.sku.toUpperCase()) {
-          resQty += o.qty;
-        } else {
-          // If order is a bundle, check if product is a component of it
-          const bundle = serverBundles.find((b: any) => b.sku.toUpperCase() === o.sku.toUpperCase());
-          if (bundle) {
-            const comps = (serverBundleComponents as BundleComponent[]).filter((bc) => bc.bundle_id === bundle.id);
-            const matchedComp = comps.find((c) => c.product_id === p.product_id);
-            if (matchedComp) {
-              resQty += matchedComp.qty * o.qty;
-            }
-          }
-        }
-      });
-      reservations[p.product_id] = resQty;
-    });
-    setProductReservations(reservations);
-
-    // Server already sent product_stock_summary with total_stock field
-    const stocks: Record<string, number> = {};
-    serverProducts.forEach((p: any) => {
-      stocks[p.product_id] = p.total_stock;
-    });
-    setProductStocks(stocks);
-    
-    // Format products from server view format
-    setProducts(serverProducts.map((p: any) => ({
-      id: p.product_id,
-      name: p.name,
-      sku: p.sku,
-      image_url: p.image_url || null,
-      is_active: p.is_active,
-      created_at: p.created_at
-    })));
-
     const storedThreshold = localStorage.getItem("stokledger_expiry_threshold");
     if (storedThreshold) setExpiryThreshold(parseInt(storedThreshold));
-  }, []);
+  }, [serverProducts, serverPendingOrders, serverBundles, serverBundleComponents]);
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch =
