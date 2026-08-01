@@ -9,18 +9,21 @@ export function createServerClient() {
   let accessToken = undefined;
   try {
     const cookieStore = cookies();
-    const projectRef = supabaseUrl.split("//")?.[1]?.split(".")?.[0] || "";
-    const tokenKey = `sb-${projectRef}-auth-token`;
-    const tokenVal = cookieStore.get(tokenKey)?.value;
-    if (tokenVal) {
+    // Supabase stores JWT in a cookie named like "sb-<project_ref>-auth-token"
+    const supabaseAuthCookie = cookieStore.get("sb-" + new URL(supabaseUrl).hostname.split('.')[0] + "-auth-token");
+    
+    if (supabaseAuthCookie?.value) {
       try {
-        const parsedToken = JSON.parse(decodeURIComponent(tokenVal));
+        const parsedToken = JSON.parse(supabaseAuthCookie.value);
         accessToken = parsedToken.access_token;
       } catch {
-        accessToken = decodeURIComponent(tokenVal);
+        // If not JSON, assume it's direct token (older format or direct assignment)
+        accessToken = supabaseAuthCookie.value;
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error("Error reading auth cookie:", e);
+  }
 
   return createClient(supabaseUrl, supabaseKey, {
     auth: {
