@@ -86,9 +86,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         password,
       });
 
-      if (error || !data.user) {
+      if (error || !data.user || !data.session) {
         return false;
       }
+
+      // Write token to cookie manually so next/headers server component has access to it on first page reload
+      const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.split("//")?.[1]?.split(".")?.[0] || "";
+      const tokenKey = `sb-${projectRef}-auth-token`;
+      const tokenVal = encodeURIComponent(JSON.stringify(data.session));
+      document.cookie = `${tokenKey}=${tokenVal}; path=/; max-age=${data.session.expires_in}; SameSite=Lax; Secure`;
 
       await fetchProfile(data.user.id, email);
       return true;
@@ -99,6 +105,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.split("//")?.[1]?.split(".")?.[0] || "";
+      const tokenKey = `sb-${projectRef}-auth-token`;
+      document.cookie = `${tokenKey}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;`;
       await supabase.auth.signOut();
     } catch {}
     setUser(null);
