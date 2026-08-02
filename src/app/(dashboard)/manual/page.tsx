@@ -246,8 +246,7 @@ export default function ManualPage() {
     }
   };
 
-// getReasonLabel is imported directly from @/lib/labels
-
+// getReasonLabel helper uses imported label global helper directly
   return (
     <div className="space-y-6">
       {/* Informative Warning Alert */}
